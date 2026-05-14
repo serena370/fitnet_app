@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "424133907239",
+    "project_id": "fitnet-1aa8d",
+    "storage_bucket": "fitnet-1aa8d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:424133907239:android:1a1c753663b19b51df0f02",
+        "android_client_info": {
+          "package_name": "com.example.fitnet_scale_app1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwMQAhrjIM_FU5P6GGCm37blkVqgGHAII"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
