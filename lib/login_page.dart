@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -20,6 +22,12 @@ class _LoginPageState extends State<LoginPage>
   }
 
   @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Padding(
@@ -27,7 +35,6 @@ class _LoginPageState extends State<LoginPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-
             Text(
               "FitNet",
               style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
@@ -48,10 +55,7 @@ class _LoginPageState extends State<LoginPage>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  LoginForm(),
-                  SignupForm(),
-                ],
+                children: [LoginForm(), SignupForm()],
               ),
             ),
           ],
@@ -60,7 +64,10 @@ class _LoginPageState extends State<LoginPage>
     );
   }
 }
+
 class LoginForm extends StatefulWidget {
+  const LoginForm({super.key});
+
   @override
   State<LoginForm> createState() => _LoginFormState();
 }
@@ -72,10 +79,16 @@ class _LoginFormState extends State<LoginForm> {
   bool isLoading = false;
 
   @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-
         TextField(
           controller: emailController,
           decoration: InputDecoration(labelText: "Email"),
@@ -93,24 +106,24 @@ class _LoginFormState extends State<LoginForm> {
           onPressed: isLoading
               ? null
               : () async {
-            setState(() => isLoading = true);
+                  setState(() => isLoading = true);
 
-            try {
-              await FirebaseAuth.instance.signInWithEmailAndPassword(
-                email: emailController.text.trim(),
-                password: passwordController.text.trim(),
-              );
-            } on FirebaseAuthException catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(e.message ?? "Login failed")),
-              );
-            }
+                  try {
+                    await FirebaseAuth.instance.signInWithEmailAndPassword(
+                      email: emailController.text.trim(),
+                      password: passwordController.text.trim(),
+                    );
+                  } on FirebaseAuthException catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(e.message ?? "Login failed")),
+                    );
+                  }
 
-            setState(() => isLoading = false);
-          },
-          child: isLoading
-              ? CircularProgressIndicator()
-              : Text("Login"),
+                  if (!mounted) return;
+                  setState(() => isLoading = false);
+                },
+          child: isLoading ? CircularProgressIndicator() : Text("Login"),
         ),
       ],
     );
@@ -118,6 +131,8 @@ class _LoginFormState extends State<LoginForm> {
 }
 
 class SignupForm extends StatefulWidget {
+  const SignupForm({super.key});
+
   @override
   State<SignupForm> createState() => _SignupFormState();
 }
@@ -134,16 +149,28 @@ class _SignupFormState extends State<SignupForm> {
 
   bool isLoading = false;
 
+  @override
+  void dispose() {
+    firstName.dispose();
+    lastName.dispose();
+    age.dispose();
+    height.dispose();
+    goalWeight.dispose();
+    email.dispose();
+    password.dispose();
+    super.dispose();
+  }
+
   Future<void> signup() async {
     setState(() => isLoading = true);
 
     try {
       // 1. Create Auth user
-      final userCredential =
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email.text.trim(),
-        password: password.text.trim(),
-      );
+      final userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: email.text.trim(),
+            password: password.text.trim(),
+          );
 
       final uid = userCredential.user!.uid;
 
@@ -156,13 +183,14 @@ class _SignupFormState extends State<SignupForm> {
         'goalWeight': double.tryParse(goalWeight.text),
         'createdAt': DateTime.now(),
       });
-
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? "Signup failed")),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message ?? "Signup failed")));
     }
 
+    if (!mounted) return;
     setState(() => isLoading = false);
   }
 
@@ -171,15 +199,39 @@ class _SignupFormState extends State<SignupForm> {
     return SingleChildScrollView(
       child: Column(
         children: [
+          TextField(
+            controller: firstName,
+            decoration: InputDecoration(labelText: "First Name"),
+          ),
+          TextField(
+            controller: lastName,
+            decoration: InputDecoration(labelText: "Last Name"),
+          ),
+          TextField(
+            controller: age,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: "Age"),
+          ),
+          TextField(
+            controller: height,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: "Height (m)"),
+          ),
+          TextField(
+            controller: goalWeight,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: "Goal Weight (kg)"),
+          ),
 
-          TextField(controller: firstName, decoration: InputDecoration(labelText: "First Name")),
-          TextField(controller: lastName, decoration: InputDecoration(labelText: "Last Name")),
-          TextField(controller: age, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "Age")),
-          TextField(controller: height, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "Height (m)")),
-          TextField(controller: goalWeight, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "Goal Weight (kg)")),
-
-          TextField(controller: email, decoration: InputDecoration(labelText: "Email")),
-          TextField(controller: password, obscureText: true, decoration: InputDecoration(labelText: "Password")),
+          TextField(
+            controller: email,
+            decoration: InputDecoration(labelText: "Email"),
+          ),
+          TextField(
+            controller: password,
+            obscureText: true,
+            decoration: InputDecoration(labelText: "Password"),
+          ),
 
           SizedBox(height: 20),
 
