@@ -27,14 +27,11 @@ class _LoginPageState extends State<LoginPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-
             Text(
               "FitNet",
               style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
             ),
-
             SizedBox(height: 20),
-
             TabBar(
               controller: _tabController,
               tabs: [
@@ -42,9 +39,7 @@ class _LoginPageState extends State<LoginPage>
                 Tab(text: "Sign Up"),
               ],
             ),
-
             SizedBox(height: 20),
-
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -60,6 +55,7 @@ class _LoginPageState extends State<LoginPage>
     );
   }
 }
+
 class LoginForm extends StatefulWidget {
   @override
   State<LoginForm> createState() => _LoginFormState();
@@ -75,42 +71,34 @@ class _LoginFormState extends State<LoginForm> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-
         TextField(
           controller: emailController,
           decoration: InputDecoration(labelText: "Email"),
         ),
-
         TextField(
           controller: passwordController,
           obscureText: true,
           decoration: InputDecoration(labelText: "Password"),
         ),
-
         SizedBox(height: 20),
-
         ElevatedButton(
           onPressed: isLoading
               ? null
               : () async {
-            setState(() => isLoading = true);
-
-            try {
-              await FirebaseAuth.instance.signInWithEmailAndPassword(
-                email: emailController.text.trim(),
-                password: passwordController.text.trim(),
-              );
-            } on FirebaseAuthException catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(e.message ?? "Login failed")),
-              );
-            }
-
-            setState(() => isLoading = false);
-          },
-          child: isLoading
-              ? CircularProgressIndicator()
-              : Text("Login"),
+                  setState(() => isLoading = true);
+                  try {
+                    await FirebaseAuth.instance.signInWithEmailAndPassword(
+                      email: emailController.text.trim(),
+                      password: passwordController.text.trim(),
+                    );
+                  } on FirebaseAuthException catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(e.message ?? "Login failed")),
+                    );
+                  }
+                  setState(() => isLoading = false);
+                },
+          child: isLoading ? CircularProgressIndicator() : Text("Login"),
         ),
       ],
     );
@@ -140,23 +128,23 @@ class _SignupFormState extends State<SignupForm> {
     try {
       // 1. Create Auth user
       final userCredential =
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email.text.trim(),
         password: password.text.trim(),
       );
 
       final uid = userCredential.user!.uid;
 
-      // 2. Save profile in Firestore
+      // 2. Save profile in Firestore (including email)
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'firstName': firstName.text.trim(),
         'lastName': lastName.text.trim(),
+        'email': email.text.trim(),
         'age': int.tryParse(age.text),
         'height': double.tryParse(height.text),
         'goalWeight': double.tryParse(goalWeight.text),
-        'createdAt': DateTime.now(),
+        'createdAt': FieldValue.serverTimestamp(),
       });
-
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message ?? "Signup failed")),
@@ -171,23 +159,34 @@ class _SignupFormState extends State<SignupForm> {
     return SingleChildScrollView(
       child: Column(
         children: [
-
-          TextField(controller: firstName, decoration: InputDecoration(labelText: "First Name")),
-          TextField(controller: lastName, decoration: InputDecoration(labelText: "Last Name")),
-          TextField(controller: age, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "Age")),
-          TextField(controller: height, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "Height (m)")),
-          TextField(controller: goalWeight, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "Goal Weight (kg)")),
-
-          TextField(controller: email, decoration: InputDecoration(labelText: "Email")),
-          TextField(controller: password, obscureText: true, decoration: InputDecoration(labelText: "Password")),
-
+          TextField(
+              controller: firstName,
+              decoration: InputDecoration(labelText: "First Name")),
+          TextField(
+              controller: lastName,
+              decoration: InputDecoration(labelText: "Last Name")),
+          TextField(
+              controller: age,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: "Age")),
+          TextField(
+              controller: height,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: "Height (m)")),
+          TextField(
+              controller: goalWeight,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: "Goal Weight (kg)")),
+          TextField(
+              controller: email, decoration: InputDecoration(labelText: "Email")),
+          TextField(
+              controller: password,
+              obscureText: true,
+              decoration: InputDecoration(labelText: "Password")),
           SizedBox(height: 20),
-
           ElevatedButton(
             onPressed: isLoading ? null : signup,
-            child: isLoading
-                ? CircularProgressIndicator()
-                : Text("Create Account"),
+            child: isLoading ? CircularProgressIndicator() : Text("Create Account"),
           ),
         ],
       ),

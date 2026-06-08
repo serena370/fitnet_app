@@ -6,6 +6,10 @@ import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'history_page.dart';
+import 'coach_page.dart';
+import 'nutrition_page.dart';
+import 'water_page.dart';
+import 'measurement_page.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'profile_page.dart';
 import 'login_page.dart';
@@ -14,24 +18,26 @@ import 'login_page.dart';
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
 final FlutterLocalNotificationsPlugin notificationsPlugin =
-FlutterLocalNotificationsPlugin();
+    FlutterLocalNotificationsPlugin();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
   const AndroidInitializationSettings androidInit =
-  AndroidInitializationSettings('@mipmap/ic_launcher');
+      AndroidInitializationSettings('@mipmap/ic_launcher');
 
   const InitializationSettings initSettings =
-  InitializationSettings(android: androidInit);
+      InitializationSettings(android: androidInit);
 
   await notificationsPlugin.initialize(initSettings);
 
-  runApp(FitNetApp());
+  runApp(const FitNetApp());
 }
 
 class FitNetApp extends StatelessWidget {
+  const FitNetApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
@@ -51,7 +57,7 @@ class FitNetApp extends StatelessWidget {
             ),
           ),
           themeMode: currentMode,
-          home: AuthGate(),
+          home: const AuthGate(),
         );
       },
     );
@@ -59,6 +65,8 @@ class FitNetApp extends StatelessWidget {
 }
 
 class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -70,7 +78,7 @@ class AuthGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData) {
-          return HomePage();
+          return const MainPage();
         } else {
           return LoginPage();
         }
@@ -79,15 +87,18 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-class HomePage extends StatefulWidget {
+class MainPage extends StatefulWidget {
+  const MainPage({super.key});
+
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<MainPage> createState() => _MainPageState();
 }
 
-class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
+  int _selectedIndex = 0;
   Map<String, dynamic>? userData;
   double weight = 0;
-  double height = 1.70; 
+  double height = 1.70;
   bool isAppInForeground = true;
 
   late MqttServerClient client;
@@ -168,6 +179,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return weight > goal ? "to lose" : "to gain";
   }
 
+  void requestWeight() {
+    final builder = MqttClientPayloadBuilder();
+    builder.addString(jsonEncode({
+      "command": "get_weight",
+      "email": FirebaseAuth.instance.currentUser?.email
+    }));
+
+    client.publishMessage(
+      "fitnet/get_weight",
+      MqttQos.atMostOnce,
+      builder.payload!,
+    );
+  }
+
   Future<void> connectMQTT() async {
     client = MqttServerClient(
       'broker.hivemq.com',
@@ -181,13 +206,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     try {
       await client.connect();
       client.subscribe("fitnet/weight", MqttQos.atMostOnce);
+      client.subscribe("fitnet/reset", MqttQos.atMostOnce);
+
       client.updates!.listen((messages) {
         final message = messages[0].payload as MqttPublishMessage;
         final payload =
             MqttPublishPayload.bytesToStringAsString(message.payload.message);
         final data = jsonDecode(payload);
+        final topic = messages[0].topic;
 
-        if (mounted) {
+        if (topic == "fitnet/reset") {
+          if (mounted) setState(() => weight = 0);
+        }
+
+
+        if (topic == "fitnet/weight" && mounted) {
           setState(() {
             weight = (data['weight'] as num).toDouble();
           });
@@ -205,18 +238,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (!isAppInForeground) {
             final String name = userData?['firstName'] ?? "User";
             final double goal = (userData?['goalWeight'] ?? 0).toDouble();
-            
             String title = "New Weight Recorded";
-            String body = "${weight.toStringAsFixed(1)} kg - BMI: ${bmi.toStringAsFixed(1)}";
+            String body =
+                "${weight.toStringAsFixed(1)} kg - BMI: ${bmi.toStringAsFixed(1)}";
 
             if (goal > 0) {
               double diff = remainingToGoal;
               if (diff < 0.5) {
                 title = "Goal Reached! 🏆";
-                body = "Amazing job $name! You hit your target weight of ${goal.toStringAsFixed(1)} kg!";
+                body =
+                    "Amazing job $name! You hit your target weight of ${goal.toStringAsFixed(1)} kg!";
               } else {
                 title = "Progress Update, $name! 💪";
-                body = "You're at ${weight.toStringAsFixed(1)} kg. Only ${diff.toStringAsFixed(1)} kg left $goalAction!";
+                body =
+                    "You're at ${weight.toStringAsFixed(1)} kg. Only ${diff.toStringAsFixed(1)} kg left $goalAction!";
               }
             }
 
@@ -226,12 +261,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               body,
               const NotificationDetails(
                 android: AndroidNotificationDetails(
-                  'fitnet_channel',
-                  'FitNet Alerts',
-                  importance: Importance.max,
-                  priority: Priority.high,
-                  showWhen: true,
-                ),
+                    'fitnet_channel', 'FitNet Alerts',
+                    importance: Importance.max, priority: Priority.high),
               ),
             );
           }
@@ -244,34 +275,47 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> pages = [
+      _buildHomeView(),
+      HistoryPage(),
+      const WaterPage(),
+      const MeasurementsPage(),
+      const NutritionPage(),
+      const CoachPage(),
+    ];
+
     return Scaffold(
       appBar: AppBar(
-        title: Text("FitNet"),
+        title: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset('assets/logo.png', height: 32),
+            ),
+            const SizedBox(width: 10),
+            const Text("FitNet", style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
         actions: [
           ValueListenableBuilder<ThemeMode>(
             valueListenable: themeNotifier,
             builder: (context, mode, child) {
               return IconButton(
-                icon: Icon(mode == ThemeMode.light ? Icons.dark_mode : Icons.light_mode),
-                onPressed: () {
-                  themeNotifier.value = mode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
-                },
-                tooltip: "Toggle Theme",
+                icon: Icon(mode == ThemeMode.light
+                    ? Icons.dark_mode
+                    : Icons.light_mode),
+                onPressed: () => themeNotifier.value =
+                    mode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light,
               );
             },
           ),
           IconButton(
-            icon: Icon(Icons.person),
+            icon: const Icon(Icons.person_outline),
             onPressed: () async {
               await Navigator.push(context,
                   MaterialPageRoute(builder: (context) => ProfilePage()));
-              loadUserData(); 
+              loadUserData();
             },
-          ),
-          IconButton(
-            icon: Icon(Icons.history),
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (context) => HistoryPage())),
           ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
@@ -279,39 +323,90 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           )
         ],
       ),
-      body: userData == null
-          ? Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: loadUserData,
-              child: SingleChildScrollView(
-                physics: AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    Text("Welcome ${userData!['firstName'] ?? 'User'} 👋",
-                        style: TextStyle(
-                            fontSize: 24, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 30),
-                    _buildCard("Current Weight",
-                        "${weight.toStringAsFixed(1)} kg", Icons.monitor_weight),
-                    SizedBox(height: 20),
-                    _buildCard("BMI", bmi.toStringAsFixed(1), Icons.speed,
-                        subtitle: status, color: statusColor),
-                    SizedBox(height: 20),
-                    _buildCard("Goal Weight",
-                        "${userData!['goalWeight'] ?? '--'} kg", Icons.flag),
-                    
-                    if (userData!['goalWeight'] != null && weight > 0)
-                      _buildGoalProgressCard(),
+      body: pages[_selectedIndex],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'History',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.water_drop_outlined),
+            selectedIcon: Icon(Icons.water_drop),
+            label: 'Water',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.straighten_outlined),
+            selectedIcon: Icon(Icons.straighten),
+            label: 'Body',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.restaurant_outlined),
+            selectedIcon: Icon(Icons.restaurant),
+            label: 'Nutrition',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.psychology_outlined),
+            selectedIcon: Icon(Icons.psychology),
+            label: 'Coach',
+          ),
+        ],
+      ),
+    );
+  }
 
-                    SizedBox(height: 20),
-                    Text(
-                        "Height used for calculation: ${height.toStringAsFixed(2)}m",
-                        style: TextStyle(color: Colors.grey)),
-                  ],
-                ),
+  Widget _buildHomeView() {
+    if (userData == null) return const Center(child: CircularProgressIndicator());
+    
+    return RefreshIndicator(
+      onRefresh: loadUserData,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Text("Welcome ${userData!['firstName'] ?? 'User'} 👋",
+                style: const TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              onPressed: requestWeight,
+              icon: const Icon(Icons.refresh),
+              label: const Text("Get Weight"),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),
+            const SizedBox(height: 20),
+            _buildCard("Current Weight",
+                "${weight.toStringAsFixed(1)} kg", Icons.monitor_weight),
+            const SizedBox(height: 20),
+            _buildCard("BMI", bmi.toStringAsFixed(1), Icons.speed,
+                subtitle: status, color: statusColor),
+            const SizedBox(height: 20),
+            _buildCard("Goal Weight",
+                "${userData!['goalWeight'] ?? '--'} kg", Icons.flag),
+            if (userData!['goalWeight'] != null && weight > 0)
+              _buildGoalProgressCard(),
+            const SizedBox(height: 20),
+            Text(
+                "Height used for calculation: ${height.toStringAsFixed(2)}m",
+                style: const TextStyle(color: Colors.grey)),
+          ],
+        ),
+      ),
     );
   }
 
@@ -322,7 +417,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     return Card(
       elevation: 4,
-      margin: EdgeInsets.symmetric(vertical: 10),
+      margin: const EdgeInsets.symmetric(vertical: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -331,26 +426,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Goal Progress", style: TextStyle(fontSize: 16, color: Colors.grey[600])),
-                Text("${remaining.toStringAsFixed(1)} kg $action", 
-                  style: TextStyle(fontWeight: FontWeight.bold, color: progressColor)),
+                Text("Goal Progress",
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                Text("${remaining.toStringAsFixed(1)} kg $action",
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: progressColor)),
               ],
             ),
-            SizedBox(height: 15),
+            const SizedBox(height: 15),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: LinearProgressIndicator(
-                value: remaining > 20 ? 0.1 : (1.0 - (remaining / 20.0)).clamp(0.1, 1.0),
+                value: remaining > 20
+                    ? 0.1
+                    : (1.0 - (remaining / 20.0)).clamp(0.1, 1.0),
                 minHeight: 12,
                 backgroundColor: Colors.grey[200],
                 valueColor: AlwaysStoppedAnimation<Color>(progressColor),
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
-              remaining < 0.5 ? "You've reached your goal! 🎉" : "Keep going! You're getting closer.",
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
+                remaining < 0.5
+                    ? "You've reached your goal! 🎉"
+                    : "Keep going! You're getting closer.",
+                style: const TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ),
       ),
@@ -367,15 +467,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         child: Row(
           children: [
             Icon(icon, size: 40, color: color ?? Colors.blue),
-            SizedBox(width: 20),
+            const SizedBox(width: 20),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                Text(title, style: TextStyle(fontSize: 16, color: Colors.grey[600])),
                 Text(value,
-                    style:
-                        TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(
+                        fontSize: 28, fontWeight: FontWeight.bold)),
                 if (subtitle != null)
                   Text(subtitle,
                       style: TextStyle(
