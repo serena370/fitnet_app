@@ -10,6 +10,7 @@ import 'coach_page.dart';
 import 'nutrition_page.dart';
 import 'water_page.dart';
 import 'measurement_page.dart';
+import 'nearby_gyms_page.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'profile_page.dart';
 import 'login_page.dart';
@@ -490,6 +491,16 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => WorkoutsPage()),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildNavCard(
+          title: "Find Nearby Gyms",
+          subtitle: "Open a map with gyms around your location",
+          icon: Icons.map_outlined,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NearbyGymsPage()),
           ),
         ),
       ],
