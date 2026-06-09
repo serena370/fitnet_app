@@ -13,6 +13,9 @@ import 'measurement_page.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'profile_page.dart';
 import 'login_page.dart';
+import 'pages/goals_page.dart';
+import 'pages/meals_page.dart';
+import 'pages/workouts_page.dart';
 
 // Global notifier for theme management
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
@@ -404,8 +407,79 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             Text(
                 "Height used for calculation: ${height.toStringAsFixed(2)}m",
                 style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 24),
+            _buildFitnessTrackerSection(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFitnessTrackerSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            "Fitness Tracker",
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildNavCard(
+          title: "Goals",
+          subtitle: "Daily & weekly fitness targets",
+          icon: Icons.flag,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => GoalsPage()),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildNavCard(
+          title: "Meals",
+          subtitle: "Track meals & calorie intake",
+          icon: Icons.restaurant,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => MealsPage()),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildNavCard(
+          title: "Workouts",
+          subtitle: "Log activities & calories burned",
+          icon: Icons.fitness_center,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => WorkoutsPage()),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNavCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: ListTile(
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        leading: Icon(icon, size: 36, color: Colors.blue),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
       ),
     );
   }
