@@ -260,7 +260,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("FitNet"),
+        title: const Text("FitNet"),
         actions: [
           ValueListenableBuilder<ThemeMode>(
             valueListenable: themeNotifier,
@@ -279,17 +279,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             },
           ),
           IconButton(
-            icon: Icon(Icons.person),
+            icon: const Icon(Icons.person),
             onPressed: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => ProfilePage()),
+                MaterialPageRoute(builder: (context) => const ProfilePage()),
               );
               loadUserData();
             },
           ),
           IconButton(
-            icon: Icon(Icons.history),
+            icon: const Icon(Icons.history),
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => HistoryPage()),
@@ -302,28 +302,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ],
       ),
       body: userData == null
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: loadUserData,
               child: SingleChildScrollView(
-                physics: AlwaysScrollableScrollPhysics(),
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
                     Text(
                       "Welcome ${userData!['firstName'] ?? 'User'} 👋",
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    SizedBox(height: 30),
+                    const SizedBox(height: 30),
                     _buildCard(
                       "Current Weight",
                       "${weight.toStringAsFixed(1)} kg",
                       Icons.monitor_weight,
                     ),
-                    SizedBox(height: 20),
+                    const SizedBox(height: 20),
                     _buildCard(
                       "BMI",
                       bmi.toStringAsFixed(1),
@@ -331,7 +331,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       subtitle: status,
                       color: statusColor,
                     ),
-                    SizedBox(height: 20),
+                    const SizedBox(height: 20),
                     _buildCard(
                       "Goal Weight",
                       "${userData!['goalWeight'] ?? '--'} kg",
@@ -341,8 +341,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     if (userData!['goalWeight'] != null && weight > 0)
                       _buildGoalProgressCard(),
 
-                    SizedBox(height: 20),
-                    Align(
+                    const SizedBox(height: 20),
+                    const Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
                         "Fitness Tracking",
@@ -352,7 +352,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         ),
                       ),
                     ),
-                    SizedBox(height: 10),
+                    const SizedBox(height: 10),
                     _buildModuleCard(
                       context,
                       title: "Workouts",
@@ -374,10 +374,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       icon: Icons.flag_outlined,
                       page: GoalsPage(),
                     ),
-                    SizedBox(height: 20),
+                    const SizedBox(height: 20),
                     Text(
                       "Height used for calculation: ${height.toStringAsFixed(2)}m",
-                      style: TextStyle(color: Colors.grey),
+                      style: const TextStyle(color: Colors.grey),
                     ),
                   ],
                 ),
@@ -393,7 +393,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     return Card(
       elevation: 4,
-      margin: EdgeInsets.symmetric(vertical: 10),
+      margin: const EdgeInsets.symmetric(vertical: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -415,7 +415,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ],
             ),
-            SizedBox(height: 15),
+            const SizedBox(height: 15),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: LinearProgressIndicator(
@@ -427,7 +427,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 valueColor: AlwaysStoppedAnimation<Color>(progressColor),
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
               remaining < 0.5
                   ? "You've reached your goal! 🎉"
@@ -449,14 +449,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }) {
     return Card(
       elevation: 2,
-      margin: EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: ListTile(
-        contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         leading: CircleAvatar(child: Icon(icon)),
-        title: Text(title, style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(subtitle),
-        trailing: Icon(Icons.chevron_right),
+        trailing: const Icon(Icons.chevron_right),
         onTap: () =>
             Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
       ),
@@ -478,7 +478,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         child: Row(
           children: [
             Icon(icon, size: 40, color: color ?? Colors.blue),
-            SizedBox(width: 20),
+            const SizedBox(width: 20),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -488,7 +488,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
                 Text(
                   value,
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
                 if (subtitle != null)
                   Text(
