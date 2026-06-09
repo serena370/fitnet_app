@@ -26,9 +26,13 @@ class _CoachPageState extends State<CoachPage> {
   List<ChatMessage> messages = [];
   bool isTyping = false;
   bool isSavingPlan = false;
+  bool isSavingEntry = false;
 
   // 🔑 Gemini API Configuration
-  final String geminiKey = "YOUR_API_KEY";
+  final String geminiKey = const String.fromEnvironment(
+    'GEMINI_API_KEY',
+    defaultValue: 'YOUR_API_KEY',
+  );
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -303,6 +307,8 @@ class _CoachPageState extends State<CoachPage> {
   Widget _buildChatBubble(ChatMessage msg) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final canSavePlan = !msg.isUser && _looksLikeWorkoutPlan(msg.text);
+    final canSaveMeal = !msg.isUser && _looksLikeMealSuggestion(msg.text);
+    final canSaveGoal = !msg.isUser && _looksLikeGoalSuggestion(msg.text);
     return Align(
       alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -331,12 +337,35 @@ class _CoachPageState extends State<CoachPage> {
                 color: msg.isUser || isDark ? Colors.white : Colors.black87,
               ),
             ),
-            if (canSavePlan) ...[
+            if (canSavePlan || canSaveMeal || canSaveGoal) ...[
               const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: isSavingPlan ? null : () => _saveWorkoutPlan(msg),
-                icon: const Icon(Icons.save_alt, size: 18),
-                label: Text(isSavingPlan ? 'Saving...' : 'Save as Workout'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  if (canSavePlan)
+                    OutlinedButton.icon(
+                      onPressed: isSavingPlan
+                          ? null
+                          : () => _saveWorkoutPlan(msg),
+                      icon: const Icon(Icons.fitness_center, size: 18),
+                      label: Text(
+                        isSavingPlan ? 'Saving...' : 'Save as Workout',
+                      ),
+                    ),
+                  if (canSaveMeal)
+                    OutlinedButton.icon(
+                      onPressed: isSavingEntry ? null : () => _saveMeal(msg),
+                      icon: const Icon(Icons.restaurant, size: 18),
+                      label: const Text('Save as Meal'),
+                    ),
+                  if (canSaveGoal)
+                    OutlinedButton.icon(
+                      onPressed: isSavingEntry ? null : () => _saveGoal(msg),
+                      icon: const Icon(Icons.flag_outlined, size: 18),
+                      label: const Text('Save as Goal'),
+                    ),
+                ],
               ),
             ],
           ],
@@ -356,6 +385,30 @@ class _CoachPageState extends State<CoachPage> {
         lower.contains('gym');
   }
 
+  bool _looksLikeMealSuggestion(String text) {
+    final lower = text.toLowerCase();
+    return lower.contains('meal') ||
+        lower.contains('breakfast') ||
+        lower.contains('lunch') ||
+        lower.contains('dinner') ||
+        lower.contains('snack') ||
+        lower.contains('calorie') ||
+        lower.contains('protein') ||
+        lower.contains('carb') ||
+        lower.contains('fat');
+  }
+
+  bool _looksLikeGoalSuggestion(String text) {
+    final lower = text.toLowerCase();
+    return lower.contains('goal') ||
+        lower.contains('target') ||
+        lower.contains('daily') ||
+        lower.contains('weekly') ||
+        lower.contains('steps') ||
+        lower.contains('km') ||
+        lower.contains('minutes');
+  }
+
   Future<void> _saveWorkoutPlan(ChatMessage msg) async {
     setState(() => isSavingPlan = true);
     try {
@@ -371,6 +424,66 @@ class _CoachPageState extends State<CoachPage> {
       );
     } finally {
       if (mounted) setState(() => isSavingPlan = false);
+    }
+  }
+
+  Future<void> _saveMeal(ChatMessage msg) async {
+    final draft = _MealDraft.fromAiText(msg.text);
+    final confirmed = await showDialog<_MealDraft>(
+      context: context,
+      builder: (context) => _SaveMealDialog(initialDraft: draft),
+    );
+    if (confirmed == null) return;
+
+    setState(() => isSavingEntry = true);
+    try {
+      await _fitnessRepository.addMeal(
+        name: confirmed.name,
+        mealType: confirmed.mealType,
+        calories: confirmed.calories,
+        notes: confirmed.notes,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Meal saved from AI suggestion.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save meal: $error')));
+    } finally {
+      if (mounted) setState(() => isSavingEntry = false);
+    }
+  }
+
+  Future<void> _saveGoal(ChatMessage msg) async {
+    final draft = _GoalDraft.fromAiText(msg.text);
+    final confirmed = await showDialog<_GoalDraft>(
+      context: context,
+      builder: (context) => _SaveGoalDialog(initialDraft: draft),
+    );
+    if (confirmed == null) return;
+
+    setState(() => isSavingEntry = true);
+    try {
+      await _fitnessRepository.addGoal(
+        title: confirmed.title,
+        targetValue: confirmed.targetValue,
+        unit: confirmed.unit,
+        period: confirmed.period,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Goal saved from AI suggestion.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save goal: $error')));
+    } finally {
+      if (mounted) setState(() => isSavingEntry = false);
     }
   }
 
@@ -455,4 +568,317 @@ class _CoachPageState extends State<CoachPage> {
       ),
     );
   }
+}
+
+class _MealDraft {
+  const _MealDraft({
+    required this.name,
+    required this.mealType,
+    required this.calories,
+    required this.notes,
+  });
+
+  final String name;
+  final String mealType;
+  final int calories;
+  final String notes;
+
+  factory _MealDraft.fromAiText(String text) {
+    final lower = text.toLowerCase();
+    final caloriesMatch = RegExp(
+      r'(\d{1,5})\s*(kcal|calories|cal)',
+      caseSensitive: false,
+    ).firstMatch(text);
+
+    return _MealDraft(
+      name: _firstUsefulLine(text, fallback: 'AI suggested meal'),
+      mealType: lower.contains('breakfast')
+          ? 'Breakfast'
+          : lower.contains('lunch')
+          ? 'Lunch'
+          : lower.contains('dinner')
+          ? 'Dinner'
+          : lower.contains('snack')
+          ? 'Snack'
+          : 'Breakfast',
+      calories: int.tryParse(caloriesMatch?.group(1) ?? '') ?? 0,
+      notes: text,
+    );
+  }
+}
+
+class _GoalDraft {
+  const _GoalDraft({
+    required this.title,
+    required this.period,
+    required this.targetValue,
+    required this.unit,
+  });
+
+  final String title;
+  final String period;
+  final double targetValue;
+  final String unit;
+
+  factory _GoalDraft.fromAiText(String text) {
+    final lower = text.toLowerCase();
+    final targetMatch = RegExp(
+      r'(\d+(?:\.\d+)?)\s*(steps?|km|kilometers?|kcal|calories|minutes?|mins?|glasses|liters?|l|workouts?|kg)',
+      caseSensitive: false,
+    ).firstMatch(text);
+
+    return _GoalDraft(
+      title: _firstUsefulLine(text, fallback: 'AI suggested goal'),
+      period: lower.contains('week') || lower.contains('weekly')
+          ? 'Weekly'
+          : 'Daily',
+      targetValue: double.tryParse(targetMatch?.group(1) ?? '') ?? 1,
+      unit: _normalizeGoalUnit(targetMatch?.group(2) ?? 'times'),
+    );
+  }
+}
+
+class _SaveMealDialog extends StatefulWidget {
+  const _SaveMealDialog({required this.initialDraft});
+
+  final _MealDraft initialDraft;
+
+  @override
+  State<_SaveMealDialog> createState() => _SaveMealDialogState();
+}
+
+class _SaveMealDialogState extends State<_SaveMealDialog> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _caloriesController;
+  late final TextEditingController _notesController;
+  late String _mealType;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialDraft.name);
+    _caloriesController = TextEditingController(
+      text: widget.initialDraft.calories.toString(),
+    );
+    _notesController = TextEditingController(text: widget.initialDraft.notes);
+    _mealType = widget.initialDraft.mealType;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _caloriesController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final name = _nameController.text.trim();
+    final calories = int.tryParse(_caloriesController.text.trim());
+    if (name.isEmpty || calories == null || calories < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a meal name and valid calories.')),
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      _MealDraft(
+        name: name,
+        mealType: _mealType,
+        calories: calories,
+        notes: _notesController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Review AI Meal'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Meal name'),
+            ),
+            DropdownButtonFormField<String>(
+              initialValue: _mealType,
+              decoration: const InputDecoration(labelText: 'Meal type'),
+              items: const [
+                DropdownMenuItem(value: 'Breakfast', child: Text('Breakfast')),
+                DropdownMenuItem(value: 'Lunch', child: Text('Lunch')),
+                DropdownMenuItem(value: 'Dinner', child: Text('Dinner')),
+                DropdownMenuItem(value: 'Snack', child: Text('Snack')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _mealType = value);
+              },
+            ),
+            TextField(
+              controller: _caloriesController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Calories'),
+            ),
+            TextField(
+              controller: _notesController,
+              maxLines: 4,
+              decoration: const InputDecoration(labelText: 'Notes'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _confirm, child: const Text('Save Meal')),
+      ],
+    );
+  }
+}
+
+class _SaveGoalDialog extends StatefulWidget {
+  const _SaveGoalDialog({required this.initialDraft});
+
+  final _GoalDraft initialDraft;
+
+  @override
+  State<_SaveGoalDialog> createState() => _SaveGoalDialogState();
+}
+
+class _SaveGoalDialogState extends State<_SaveGoalDialog> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _targetController;
+  late final TextEditingController _unitController;
+  late String _period;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.initialDraft.title);
+    _targetController = TextEditingController(
+      text: _formatDraftNumber(widget.initialDraft.targetValue),
+    );
+    _unitController = TextEditingController(text: widget.initialDraft.unit);
+    _period = widget.initialDraft.period;
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _targetController.dispose();
+    _unitController.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final title = _titleController.text.trim();
+    final target = double.tryParse(_targetController.text.trim());
+    final unit = _unitController.text.trim();
+    if (title.isEmpty || target == null || target <= 0 || unit.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a goal title, positive target, and unit.'),
+        ),
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      _GoalDraft(
+        title: title,
+        period: _period,
+        targetValue: target,
+        unit: unit,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Review AI Goal'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(labelText: 'Goal title'),
+            ),
+            DropdownButtonFormField<String>(
+              initialValue: _period,
+              decoration: const InputDecoration(labelText: 'Period'),
+              items: const [
+                DropdownMenuItem(value: 'Daily', child: Text('Daily')),
+                DropdownMenuItem(value: 'Weekly', child: Text('Weekly')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _period = value);
+              },
+            ),
+            TextField(
+              controller: _targetController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(labelText: 'Target'),
+            ),
+            TextField(
+              controller: _unitController,
+              decoration: const InputDecoration(labelText: 'Unit'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _confirm, child: const Text('Save Goal')),
+      ],
+    );
+  }
+}
+
+String _firstUsefulLine(String text, {required String fallback}) {
+  for (final line in text.split('\n')) {
+    final cleaned = line
+        .replaceAll(RegExp(r'^[\s\-*#\d.)]+'), '')
+        .replaceAll(RegExp(r'\*\*|__|`'), '')
+        .trim();
+    if (cleaned.length >= 3) {
+      return cleaned.length > 48 ? '${cleaned.substring(0, 48)}...' : cleaned;
+    }
+  }
+  return fallback;
+}
+
+String _normalizeGoalUnit(String unit) {
+  final lower = unit.toLowerCase();
+  if (lower == 'kilometer' || lower == 'kilometers') return 'km';
+  if (lower == 'minute' || lower == 'minutes' || lower == 'mins') {
+    return 'minutes';
+  }
+  if (lower == 'calorie' || lower == 'calories' || lower == 'kcal') {
+    return 'kcal';
+  }
+  if (lower == 'step' || lower == 'steps') return 'steps';
+  if (lower == 'workout' || lower == 'workouts') return 'workouts';
+  if (lower == 'liter' || lower == 'liters') return 'liters';
+  if (lower == 'l') return 'liters';
+  return lower;
+}
+
+String _formatDraftNumber(double value) {
+  return value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
 }

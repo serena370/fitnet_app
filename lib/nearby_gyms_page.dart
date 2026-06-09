@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class NearbyGymsPage extends StatefulWidget {
@@ -14,6 +15,7 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
   bool _isLoadingLocation = true;
   bool _isLoadingMap = false;
   String? _errorMessage;
+  Uri? _mapsUri;
 
   @override
   void initState() {
@@ -35,9 +37,11 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
         'https://www.google.com/maps/search/gyms/'
         '@${position.latitude},${position.longitude},14z',
       );
+      _mapsUri = uri;
 
       final controller = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setBackgroundColor(Colors.white)
         ..setNavigationDelegate(
           NavigationDelegate(
             onPageStarted: (_) {
@@ -47,13 +51,14 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
               if (mounted) setState(() => _isLoadingMap = false);
             },
             onWebResourceError: (error) {
-              if (!mounted || error.isForMainFrame == false) return;
+              if (!mounted || error.isForMainFrame != true) return;
               setState(() {
                 _isLoadingMap = false;
                 _errorMessage =
-                    'Could not load the gyms map. Check your connection and try again.';
+                    'The in-app map could not load. You can still open nearby gyms in Google Maps.';
               });
             },
+            onNavigationRequest: (_) => NavigationDecision.navigate,
           ),
         )
         ..loadRequest(uri);
@@ -69,7 +74,9 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
       setState(() {
         _isLoadingLocation = false;
         _isLoadingMap = false;
-        _errorMessage = error.toString();
+        _errorMessage = error is _NearbyGymsException
+            ? error.toString()
+            : 'The in-app map could not load. You can still open nearby gyms in Google Maps.';
       });
     }
   }
@@ -107,6 +114,21 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
     );
   }
 
+  Future<void> _openInGoogleMaps() async {
+    final uri = _mapsUri;
+    if (uri == null) {
+      await _loadNearbyGyms();
+      return;
+    }
+
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Google Maps.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -116,7 +138,11 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
           if (_controller != null && _errorMessage == null)
             WebViewWidget(controller: _controller!)
           else if (_errorMessage != null)
-            _ErrorState(message: _errorMessage!, onRetry: _loadNearbyGyms)
+            _ErrorState(
+              message: _errorMessage!,
+              onRetry: _loadNearbyGyms,
+              onOpenMaps: _mapsUri == null ? null : _openInGoogleMaps,
+            )
           else
             const _LoadingState(message: 'Finding gyms near you...'),
           if (_isLoadingMap)
@@ -170,10 +196,15 @@ class _LoadingState extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
+  const _ErrorState({
+    required this.message,
+    required this.onRetry,
+    required this.onOpenMaps,
+  });
 
   final String message;
   final VoidCallback onRetry;
+  final VoidCallback? onOpenMaps;
 
   @override
   Widget build(BuildContext context) {
@@ -193,10 +224,22 @@ class _ErrorState extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: onOpenMaps,
+                    icon: const Icon(Icons.map_outlined),
+                    label: const Text('Open in Google Maps'),
+                  ),
+                ],
               ),
             ],
           ),
