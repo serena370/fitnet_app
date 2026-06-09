@@ -46,7 +46,10 @@ class _ProfilePageState extends State<ProfilePage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
 
       if (doc.exists) {
         final data = doc.data()!;
@@ -101,7 +104,11 @@ class _ProfilePageState extends State<ProfilePage> {
       await client.connect();
       final builder = MqttClientPayloadBuilder();
       builder.addString(jsonEncode({"goal": goal}));
-      client.publishMessage("fitnet/goal", MqttQos.atMostOnce, builder.payload!);
+      client.publishMessage(
+        "fitnet/goal",
+        MqttQos.atMostOnce,
+        builder.payload!,
+      );
       client.disconnect();
     } catch (e) {
       debugPrint("MQTT Goal Publish Error: $e");
@@ -144,9 +151,9 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error saving profile: $e")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error saving profile: $e")));
       }
     } finally {
       if (mounted) setState(() => isSaving = false);
@@ -161,7 +168,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("My Account", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          "My Account",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
         elevation: 0,
         actions: [
@@ -171,7 +181,7 @@ class _ProfilePageState extends State<ProfilePage> {
               await FirebaseAuth.instance.signOut();
               if (mounted) Navigator.pop(context);
             },
-          )
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -198,7 +208,11 @@ class _ProfilePageState extends State<ProfilePage> {
                           ? MemoryImage(base64Decode(profileImageBase64!))
                           : null,
                       child: (profileImageBase64 == null)
-                          ? Icon(Icons.person, size: 65, color: Colors.blue[200])
+                          ? Icon(
+                              Icons.person,
+                              size: 65,
+                              color: Colors.blue[200],
+                            )
                           : null,
                     ),
                   ),
@@ -214,7 +228,11 @@ class _ProfilePageState extends State<ProfilePage> {
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 3),
                         ),
-                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                       ),
                     ),
                   ),
@@ -225,17 +243,43 @@ class _ProfilePageState extends State<ProfilePage> {
 
             _buildSectionTitle("Personal Details"),
             const SizedBox(height: 12),
-            _buildModernField(firstNameController, "First Name", Icons.person_outline),
-            _buildModernField(lastNameController, "Last Name", Icons.badge_outlined),
-            _buildModernField(emailController, "Email Address", Icons.email_outlined),
-            _buildModernField(ageController, "Age", Icons.calendar_today_outlined, isNumber: true),
+            _buildModernField(
+              firstNameController,
+              "First Name",
+              Icons.person_outline,
+            ),
+            _buildModernField(
+              lastNameController,
+              "Last Name",
+              Icons.badge_outlined,
+            ),
+            _buildModernField(
+              emailController,
+              "Email Address",
+              Icons.email_outlined,
+            ),
+            _buildModernField(
+              ageController,
+              "Age",
+              Icons.calendar_today_outlined,
+              isNumber: true,
+            ),
 
             const SizedBox(height: 24),
 
             _buildSectionTitle("Body Metrics"),
             const SizedBox(height: 12),
-            _buildModernField(heightController, "Current Height (m)", Icons.height_rounded),
-            _buildModernField(goalController, "Weight Goal (kg)", Icons.auto_graph_rounded, isNumber: true),
+            _buildModernField(
+              heightController,
+              "Current Height (m)",
+              Icons.height_rounded,
+            ),
+            _buildModernField(
+              goalController,
+              "Weight Goal (kg)",
+              Icons.auto_graph_rounded,
+              isNumber: true,
+            ),
 
             const SizedBox(height: 40),
 
@@ -247,16 +291,27 @@ class _ProfilePageState extends State<ProfilePage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blueAccent,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   elevation: 2,
                 ),
                 child: isSaving
                     ? const SizedBox(
                         height: 24,
                         width: 24,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
                       )
-                    : const Text("Update Profile", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    : const Text(
+                        "Update Profile",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 40),
@@ -271,12 +326,21 @@ class _ProfilePageState extends State<ProfilePage> {
       alignment: Alignment.centerLeft,
       child: Text(
         title,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1),
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1,
+        ),
       ),
     );
   }
 
-  Widget _buildModernField(TextEditingController controller, String label, IconData icon, {bool isNumber = false}) {
+  Widget _buildModernField(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    bool isNumber = false,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -292,7 +356,10 @@ class _ProfilePageState extends State<ProfilePage> {
           labelStyle: TextStyle(color: Colors.grey[500], fontSize: 13),
           prefixIcon: Icon(icon, color: Colors.blueAccent, size: 20),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 14,
+          ),
         ),
       ),
     );

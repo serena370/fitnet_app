@@ -61,6 +61,8 @@ class GoalsPage extends StatelessWidget {
                             onSelected: (action) {
                               if (action == 'progress') {
                                 _showProgressDialog(context, goal);
+                              } else if (action == 'reset') {
+                                _resetGoal(context, goal);
                               } else if (action == 'delete') {
                                 _deleteGoal(context, goal);
                               }
@@ -71,10 +73,37 @@ class GoalsPage extends StatelessWidget {
                                 child: Text('Update progress'),
                               ),
                               PopupMenuItem(
+                                value: 'reset',
+                                child: Text('Reset progress'),
+                              ),
+                              PopupMenuItem(
                                 value: 'delete',
                                 child: Text('Delete'),
                               ),
                             ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          Chip(
+                            label: Text('${goal.period}: ${goal.periodLabel}'),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          Chip(
+                            label: Text(goal.statusLabel),
+                            visualDensity: VisualDensity.compact,
+                            avatar: Icon(
+                              goal.isComplete
+                                  ? Icons.check
+                                  : goal.isExpired
+                                  ? Icons.refresh
+                                  : Icons.play_arrow,
+                              size: 18,
+                            ),
                           ),
                         ],
                       ),
@@ -150,6 +179,21 @@ class GoalsPage extends StatelessWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not update goal: $error')));
+    }
+  }
+
+  Future<void> _resetGoal(BuildContext context, FitnessGoal goal) async {
+    try {
+      await _repository.resetGoalProgress(goal);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${goal.title} progress reset.')));
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not reset goal: $error')));
     }
   }
 

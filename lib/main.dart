@@ -16,6 +16,7 @@ import 'login_page.dart';
 import 'pages/goals_page.dart';
 import 'pages/meals_page.dart';
 import 'pages/workouts_page.dart';
+import 'services/fitness_repository.dart';
 
 // Global notifier for theme management
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
@@ -30,10 +31,16 @@ void main() async {
   const AndroidInitializationSettings androidInit =
       AndroidInitializationSettings('@mipmap/ic_launcher');
 
-  const InitializationSettings initSettings =
-      InitializationSettings(android: androidInit);
+  const InitializationSettings initSettings = InitializationSettings(
+    android: androidInit,
+  );
 
   await notificationsPlugin.initialize(initSettings);
+  await notificationsPlugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
+      ?.requestNotificationsPermission();
 
   runApp(const FitNetApp());
 }
@@ -103,6 +110,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   double weight = 0;
   double height = 1.70;
   bool isAppInForeground = true;
+  final FitnessRepository _fitnessRepository = FitnessRepository();
 
   late MqttServerClient client;
 
@@ -184,10 +192,12 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
   void requestWeight() {
     final builder = MqttClientPayloadBuilder();
-    builder.addString(jsonEncode({
-      "command": "get_weight",
-      "email": FirebaseAuth.instance.currentUser?.email
-    }));
+    builder.addString(
+      jsonEncode({
+        "command": "get_weight",
+        "email": FirebaseAuth.instance.currentUser?.email,
+      }),
+    );
 
     client.publishMessage(
       "fitnet/get_weight",
@@ -213,15 +223,15 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
       client.updates!.listen((messages) {
         final message = messages[0].payload as MqttPublishMessage;
-        final payload =
-            MqttPublishPayload.bytesToStringAsString(message.payload.message);
+        final payload = MqttPublishPayload.bytesToStringAsString(
+          message.payload.message,
+        );
         final data = jsonDecode(payload);
         final topic = messages[0].topic;
 
         if (topic == "fitnet/reset") {
           if (mounted) setState(() => weight = 0);
         }
-
 
         if (topic == "fitnet/weight" && mounted) {
           setState(() {
@@ -264,8 +274,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
               body,
               const NotificationDetails(
                 android: AndroidNotificationDetails(
-                    'fitnet_channel', 'FitNet Alerts',
-                    importance: Importance.max, priority: Priority.high),
+                  'fitnet_channel',
+                  'FitNet Alerts',
+                  importance: Importance.max,
+                  priority: Priority.high,
+                ),
               ),
             );
           }
@@ -304,26 +317,29 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             valueListenable: themeNotifier,
             builder: (context, mode, child) {
               return IconButton(
-                icon: Icon(mode == ThemeMode.light
-                    ? Icons.dark_mode
-                    : Icons.light_mode),
-                onPressed: () => themeNotifier.value =
-                    mode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light,
+                icon: Icon(
+                  mode == ThemeMode.light ? Icons.dark_mode : Icons.light_mode,
+                ),
+                onPressed: () => themeNotifier.value = mode == ThemeMode.light
+                    ? ThemeMode.dark
+                    : ThemeMode.light,
               );
             },
           ),
           IconButton(
             icon: const Icon(Icons.person_outline),
             onPressed: () async {
-              await Navigator.push(context,
-                  MaterialPageRoute(builder: (context) => ProfilePage()));
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => ProfilePage()),
+              );
               loadUserData();
             },
           ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: () => FirebaseAuth.instance.signOut(),
-          )
+          ),
         ],
       ),
       body: pages[_selectedIndex],
@@ -371,8 +387,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   Widget _buildHomeView() {
-    if (userData == null) return const Center(child: CircularProgressIndicator());
-    
+    if (userData == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return RefreshIndicator(
       onRefresh: loadUserData,
       child: SingleChildScrollView(
@@ -380,33 +398,49 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Text("Welcome ${userData!['firstName'] ?? 'User'} 👋",
-                style: const TextStyle(
-                    fontSize: 24, fontWeight: FontWeight.bold)),
+            Text(
+              "Welcome ${userData!['firstName'] ?? 'User'} 👋",
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
             ElevatedButton.icon(
               onPressed: requestWeight,
               icon: const Icon(Icons.refresh),
               label: const Text("Get Weight"),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
             ),
             const SizedBox(height: 20),
-            _buildCard("Current Weight",
-                "${weight.toStringAsFixed(1)} kg", Icons.monitor_weight),
+            _buildCard(
+              "Current Weight",
+              "${weight.toStringAsFixed(1)} kg",
+              Icons.monitor_weight,
+            ),
             const SizedBox(height: 20),
-            _buildCard("BMI", bmi.toStringAsFixed(1), Icons.speed,
-                subtitle: status, color: statusColor),
+            _buildCard(
+              "BMI",
+              bmi.toStringAsFixed(1),
+              Icons.speed,
+              subtitle: status,
+              color: statusColor,
+            ),
             const SizedBox(height: 20),
-            _buildCard("Goal Weight",
-                "${userData!['goalWeight'] ?? '--'} kg", Icons.flag),
+            _buildCard(
+              "Goal Weight",
+              "${userData!['goalWeight'] ?? '--'} kg",
+              Icons.flag,
+            ),
             if (userData!['goalWeight'] != null && weight > 0)
               _buildGoalProgressCard(),
             const SizedBox(height: 20),
             Text(
-                "Height used for calculation: ${height.toStringAsFixed(2)}m",
-                style: const TextStyle(color: Colors.grey)),
+              "Height used for calculation: ${height.toStringAsFixed(2)}m",
+              style: const TextStyle(color: Colors.grey),
+            ),
             const SizedBox(height: 24),
             _buildFitnessTrackerSection(),
           ],
@@ -426,6 +460,8 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
         ),
+        const SizedBox(height: 12),
+        _buildStatsSection(),
         const SizedBox(height: 12),
         _buildNavCard(
           title: "Goals",
@@ -460,6 +496,103 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildStatsSection() {
+    return FutureBuilder<FitnessStats>(
+      future: _fitnessRepository.loadDashboardStats(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return const SizedBox.shrink();
+        }
+
+        final stats = snapshot.data!;
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Eaten Today',
+                    value: '${stats.caloriesEatenToday}',
+                    subtitle: 'kcal',
+                    icon: Icons.local_fire_department_outlined,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Workouts',
+                    value: '${stats.workoutsThisWeek}',
+                    subtitle: 'this week',
+                    icon: Icons.fitness_center,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Burned',
+                    value: '${stats.caloriesBurnedThisWeek}',
+                    subtitle: 'kcal this week',
+                    icon: Icons.bolt_outlined,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Goals',
+                    value: '${stats.activeGoals}',
+                    subtitle: '${stats.completedGoals} completed',
+                    icon: Icons.flag_outlined,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: Colors.blue),
+            const SizedBox(height: 8),
+            Text(title, style: TextStyle(color: Colors.grey[600])),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            Text(subtitle, style: const TextStyle(fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildNavCard({
     required String title,
     required String subtitle,
@@ -470,8 +603,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         leading: Icon(icon, size: 36, color: Colors.blue),
         title: Text(
           title,
@@ -500,11 +632,17 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Goal Progress",
-                    style: TextStyle(fontSize: 16, color: Colors.grey[600])),
-                Text("${remaining.toStringAsFixed(1)} kg $action",
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, color: progressColor)),
+                Text(
+                  "Goal Progress",
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                ),
+                Text(
+                  "${remaining.toStringAsFixed(1)} kg $action",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: progressColor,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 15),
@@ -521,18 +659,24 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 8),
             Text(
-                remaining < 0.5
-                    ? "You've reached your goal! 🎉"
-                    : "Keep going! You're getting closer.",
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              remaining < 0.5
+                  ? "You've reached your goal! 🎉"
+                  : "Keep going! You're getting closer.",
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCard(String title, String value, IconData icon,
-      {String? subtitle, Color? color}) {
+  Widget _buildCard(
+    String title,
+    String value,
+    IconData icon, {
+    String? subtitle,
+    Color? color,
+  }) {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -545,16 +689,26 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(fontSize: 16, color: Colors.grey[600])),
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: 28, fontWeight: FontWeight.bold)),
+                Text(
+                  title,
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 if (subtitle != null)
-                  Text(subtitle,
-                      style: TextStyle(
-                          fontSize: 16,
-                          color: color,
-                          fontWeight: FontWeight.w500)),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: color,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
               ],
             ),
           ],

@@ -9,6 +9,7 @@ class Workout {
     required this.caloriesBurned,
     required this.date,
     required this.notes,
+    this.reminderAt,
   });
 
   final String id;
@@ -18,6 +19,7 @@ class Workout {
   final int caloriesBurned;
   final DateTime date;
   final String notes;
+  final DateTime? reminderAt;
 
   Map<String, dynamic> toFirestore() {
     return {
@@ -27,6 +29,7 @@ class Workout {
       'caloriesBurned': caloriesBurned,
       'date': Timestamp.fromDate(date),
       'notes': notes,
+      if (reminderAt != null) 'reminderAt': Timestamp.fromDate(reminderAt!),
       'createdAt': FieldValue.serverTimestamp(),
     };
   }
@@ -36,6 +39,7 @@ class Workout {
   ) {
     final data = document.data() ?? {};
     final timestamp = data['date'];
+    final reminderTimestamp = data['reminderAt'];
 
     return Workout(
       id: document.id,
@@ -45,6 +49,9 @@ class Workout {
       caloriesBurned: (data['caloriesBurned'] as num?)?.toInt() ?? 0,
       date: timestamp is Timestamp ? timestamp.toDate() : DateTime.now(),
       notes: data['notes'] as String? ?? '',
+      reminderAt: reminderTimestamp is Timestamp
+          ? reminderTimestamp.toDate()
+          : null,
     );
   }
 }

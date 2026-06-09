@@ -21,8 +21,10 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    if (_waistController.text.isEmpty && _chestController.text.isEmpty && 
-        _armController.text.isEmpty && _hipController.text.isEmpty) {
+    if (_waistController.text.isEmpty &&
+        _chestController.text.isEmpty &&
+        _armController.text.isEmpty &&
+        _hipController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please enter at least one measurement")),
       );
@@ -53,9 +55,9 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error saving: $e")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error saving: $e")));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -66,7 +68,10 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Body Measurements", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Body Measurements",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -76,7 +81,10 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
           children: [
             _buildInfoCard(),
             const SizedBox(height: 30),
-            const Text("Enter Dimensions (cm)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              "Enter Dimensions (cm)",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 20),
             _buildInputFields(),
             const SizedBox(height: 40),
@@ -88,15 +96,26 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.purple,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
                 ),
                 child: _isSaving
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("Log Progress", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        "Log Progress",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 40),
-            const Text("Recent Changes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              "Recent Changes",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 15),
             _buildHistoryList(),
           ],
@@ -109,9 +128,17 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Colors.purple, Colors.deepPurpleAccent]),
+        gradient: const LinearGradient(
+          colors: [Colors.purple, Colors.deepPurpleAccent],
+        ),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.purple.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.purple.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: const Row(
         children: [
@@ -139,7 +166,11 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
     );
   }
 
-  Widget _buildMeasureField(TextEditingController controller, String label, IconData icon) {
+  Widget _buildMeasureField(
+    TextEditingController controller,
+    String label,
+    IconData icon,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: TextField(
@@ -168,13 +199,23 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text("No measurements logged yet.", style: TextStyle(color: Colors.grey)));
+          return const Center(
+            child: Text(
+              "No measurements logged yet.",
+              style: TextStyle(color: Colors.grey),
+            ),
+          );
         }
 
         return Column(
           children: snapshot.data!.docs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            final date = (data['timestamp'] as Timestamp?)?.toDate().toString().substring(0, 10) ?? "";
+            final date =
+                (data['timestamp'] as Timestamp?)
+                    ?.toDate()
+                    .toString()
+                    .substring(0, 10) ??
+                "";
 
             return Dismissible(
               key: Key(doc.id),
@@ -189,14 +230,19 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
                 child: const Icon(Icons.delete, color: Colors.white),
               ),
               onDismissed: (direction) {
-                FirebaseFirestore.instance.collection('measurements').doc(doc.id).delete();
+                FirebaseFirestore.instance
+                    .collection('measurements')
+                    .doc(doc.id)
+                    .delete();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Measurement deleted")),
                 );
               },
               child: Card(
                 margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -204,8 +250,18 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(date, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.purple)),
-                          const Icon(Icons.event_note, size: 16, color: Colors.grey),
+                          Text(
+                            date,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple,
+                            ),
+                          ),
+                          const Icon(
+                            Icons.event_note,
+                            size: 16,
+                            color: Colors.grey,
+                          ),
                         ],
                       ),
                       const Divider(),
@@ -217,7 +273,7 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
                           _buildStat("Arm", "${data['arm']}cm"),
                           _buildStat("Hips", "${data['hip']}cm"),
                         ],
-                      )
+                      ),
                     ],
                   ),
                 ),
@@ -232,7 +288,10 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
   Widget _buildStat(String label, String value) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
         Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
       ],
     );

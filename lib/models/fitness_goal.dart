@@ -10,6 +10,7 @@ class FitnessGoal {
     required this.unit,
     required this.period,
     required this.createdAt,
+    this.resetAt,
   });
 
   final String id;
@@ -20,12 +21,47 @@ class FitnessGoal {
   final String unit;
   final String period;
   final DateTime createdAt;
+  final DateTime? resetAt;
 
   bool get isComplete => currentValue >= targetValue;
+
+  bool get isExpired {
+    if (isComplete) return false;
+    final deadline = resetAt ?? _defaultResetAt;
+    return DateTime.now().isAfter(deadline);
+  }
+
+  String get statusLabel {
+    if (isComplete) return 'Completed';
+    if (isExpired) return 'Expired / Needs reset';
+    return 'Active';
+  }
+
+  String get periodLabel {
+    if (period == 'Weekly') return 'Current week';
+    return 'Today';
+  }
 
   double get progress {
     if (targetValue <= 0) return 0;
     return (currentValue / targetValue).clamp(0.0, 1.0).toDouble();
+  }
+
+  DateTime get _defaultResetAt {
+    if (period == 'Weekly') {
+      final startOfDay = DateTime(
+        createdAt.year,
+        createdAt.month,
+        createdAt.day,
+      );
+      final daysUntilNextWeek = 8 - startOfDay.weekday;
+      return startOfDay.add(Duration(days: daysUntilNextWeek));
+    }
+    return DateTime(
+      createdAt.year,
+      createdAt.month,
+      createdAt.day,
+    ).add(const Duration(days: 1));
   }
 
   Map<String, dynamic> toFirestore() {
@@ -37,6 +73,7 @@ class FitnessGoal {
       'unit': unit,
       'period': period,
       'createdAt': Timestamp.fromDate(createdAt),
+      'resetAt': Timestamp.fromDate(resetAt ?? _defaultResetAt),
     };
   }
 
@@ -45,6 +82,7 @@ class FitnessGoal {
   ) {
     final data = document.data() ?? {};
     final timestamp = data['createdAt'];
+    final resetTimestamp = data['resetAt'];
 
     return FitnessGoal(
       id: document.id,
@@ -55,6 +93,7 @@ class FitnessGoal {
       unit: data['unit'] as String? ?? '',
       period: data['period'] as String? ?? 'Daily',
       createdAt: timestamp is Timestamp ? timestamp.toDate() : DateTime.now(),
+      resetAt: resetTimestamp is Timestamp ? resetTimestamp.toDate() : null,
     );
   }
 }

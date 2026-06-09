@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/workout.dart';
 import '../services/fitness_repository.dart';
+import '../services/workout_reminder_service.dart';
 import '../utils/date_time_format.dart';
 
 class WorkoutsPage extends StatelessWidget {
@@ -50,13 +51,25 @@ class WorkoutsPage extends StatelessWidget {
                     '${workout.durationMinutes} min - '
                     '${workout.caloriesBurned} kcal\n'
                     '${formatDateTime(workout.date)}'
+                    '${workout.reminderAt == null ? '' : '\nReminder: ${formatDateTime(workout.reminderAt!)}'}'
                     '${workout.notes.isEmpty ? '' : '\n${workout.notes}'}',
                   ),
                   isThreeLine: true,
-                  trailing: IconButton(
-                    tooltip: 'Delete workout',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => _deleteWorkout(context, workout),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (action) {
+                      if (action == 'reminder') {
+                        _setWorkoutReminder(context, workout);
+                      } else if (action == 'delete') {
+                        _deleteWorkout(context, workout);
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'reminder',
+                        child: Text('Set reminder'),
+                      ),
+                      PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    ],
                   ),
                 ),
               );
@@ -105,6 +118,69 @@ class WorkoutsPage extends StatelessWidget {
       );
     }
   }
+
+  Future<void> _setWorkoutReminder(
+    BuildContext context,
+    Workout workout,
+  ) async {
+    final reminderAt = await _pickReminderDateTime(context);
+    if (reminderAt == null) return;
+
+    try {
+      await _repository.updateWorkoutReminder(workout.id, reminderAt);
+      WorkoutReminderService.scheduleWorkoutReminder(
+        workoutId: workout.id,
+        activityType: workout.activityType,
+        reminderAt: reminderAt,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reminder set for ${formatDateTime(reminderAt)}'),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not set reminder: $error')));
+    }
+  }
+
+  Future<DateTime?> _pickReminderDateTime(BuildContext context) async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 30)),
+    );
+    if (date == null || !context.mounted) return null;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 5))),
+    );
+    if (time == null) return null;
+
+    final reminderAt = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+
+    if (reminderAt.isBefore(now)) {
+      if (!context.mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose a future reminder time.')),
+      );
+      return null;
+    }
+
+    return reminderAt;
+  }
 }
 
 class _AddWorkoutDialog extends StatefulWidget {
@@ -121,6 +197,7 @@ class _AddWorkoutDialogState extends State<_AddWorkoutDialog> {
   final _caloriesController = TextEditingController();
   final _notesController = TextEditingController();
   String _activityType = 'Running';
+  DateTime? _reminderAt;
   bool _isSaving = false;
 
   @override
@@ -141,12 +218,20 @@ class _AddWorkoutDialogState extends State<_AddWorkoutDialog> {
 
     setState(() => _isSaving = true);
     try {
-      await widget.repository.addWorkout(
+      final workout = await widget.repository.addWorkout(
         activityType: _activityType,
         durationMinutes: duration,
         caloriesBurned: calories,
         notes: _notesController.text.trim(),
+        reminderAt: _reminderAt,
       );
+      if (_reminderAt != null) {
+        WorkoutReminderService.scheduleWorkoutReminder(
+          workoutId: workout.id,
+          activityType: workout.activityType,
+          reminderAt: _reminderAt!,
+        );
+      }
       if (mounted) Navigator.pop(context);
     } catch (error) {
       _showError('Could not save workout: $error');
@@ -160,6 +245,38 @@ class _AddWorkoutDialogState extends State<_AddWorkoutDialog> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _pickReminder() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 30)),
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 5))),
+    );
+    if (time == null) return;
+
+    final selected = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+
+    if (selected.isBefore(now)) {
+      _showError('Choose a future reminder time.');
+      return;
+    }
+
+    setState(() => _reminderAt = selected);
   }
 
   @override
@@ -199,6 +316,16 @@ class _AddWorkoutDialogState extends State<_AddWorkoutDialog> {
             TextField(
               controller: _notesController,
               decoration: const InputDecoration(labelText: 'Notes (optional)'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _isSaving ? null : _pickReminder,
+              icon: const Icon(Icons.notifications_active_outlined),
+              label: Text(
+                _reminderAt == null
+                    ? 'Set reminder (optional)'
+                    : 'Reminder: ${formatDateTime(_reminderAt!)}',
+              ),
             ),
           ],
         ),

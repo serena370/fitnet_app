@@ -38,10 +38,14 @@ class Meal {
     return Meal(
       id: document.id,
       userId: data['userId'] as String? ?? '',
-      name: data['name'] as String? ?? 'Meal',
+      name: data['name'] as String? ?? data['mealName'] as String? ?? 'Meal',
       mealType: data['mealType'] as String? ?? 'Other',
       calories: (data['calories'] as num?)?.toInt() ?? 0,
-      date: timestamp is Timestamp ? timestamp.toDate() : DateTime.now(),
+      date: timestamp is Timestamp
+          ? timestamp.toDate()
+          : data['timestamp'] is Timestamp
+          ? (data['timestamp'] as Timestamp).toDate()
+          : DateTime.now(),
       notes: data['notes'] as String? ?? '',
     );
   }

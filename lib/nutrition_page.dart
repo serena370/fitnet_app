@@ -23,7 +23,10 @@ class _NutritionPageState extends State<NutritionPage> {
   final String geminiKey = "YOUR_API_KEY";
 
   Future<void> _pickImage(ImageSource source) async {
-    final pickedFile = await _picker.pickImage(source: source, imageQuality: 50);
+    final pickedFile = await _picker.pickImage(
+      source: source,
+      imageQuality: 50,
+    );
     if (pickedFile != null) {
       setState(() {
         _image = File(pickedFile.path);
@@ -35,7 +38,9 @@ class _NutritionPageState extends State<NutritionPage> {
     final String text = _mealController.text.trim();
     if (text.isEmpty && _image == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please describe your meal or take a photo")),
+        const SnackBar(
+          content: Text("Please describe your meal or take a photo"),
+        ),
       );
       return;
     }
@@ -44,7 +49,8 @@ class _NutritionPageState extends State<NutritionPage> {
 
     try {
       // Improved prompt to ensure strict JSON output
-      String prompt = """
+      String prompt =
+          """
 Analyze this meal and provide estimated nutritional values.
 Return ONLY a raw JSON object with these exact keys:
 "mealName" (string), "calories" (integer), "protein" (integer, grams),
@@ -54,7 +60,8 @@ User description: $text
 """;
 
       final url = Uri.parse(
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiKey");
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiKey",
+      );
 
       Map<String, dynamic> requestBody;
 
@@ -70,22 +77,22 @@ User description: $text
                 {
                   "inline_data": {
                     "mime_type": "image/jpeg",
-                    "data": base64Image
-                  }
-                }
-              ]
-            }
-          ]
+                    "data": base64Image,
+                  },
+                },
+              ],
+            },
+          ],
         };
       } else {
         requestBody = {
           "contents": [
             {
               "parts": [
-                {"text": prompt}
-              ]
-            }
-          ]
+                {"text": prompt},
+              ],
+            },
+          ],
         };
       }
 
@@ -98,24 +105,26 @@ User description: $text
       final responseData = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        if (responseData["candidates"] == null || responseData["candidates"].isEmpty) {
+        if (responseData["candidates"] == null ||
+            responseData["candidates"].isEmpty) {
           throw Exception("AI returned no results. Try a clearer description.");
         }
 
-        String resultText = responseData["candidates"][0]["content"]["parts"][0]["text"];
-        
+        String resultText =
+            responseData["candidates"][0]["content"]["parts"][0]["text"];
+
         // Better JSON extraction
         int firstBrace = resultText.indexOf('{');
         int lastBrace = resultText.lastIndexOf('}');
         if (firstBrace == -1 || lastBrace == -1) {
           throw Exception("Could not read nutritional data. Try again.");
         }
-        
+
         String jsonString = resultText.substring(firstBrace, lastBrace + 1);
         final mealData = jsonDecode(jsonString);
 
         await _saveMeal(mealData);
-        
+
         if (mounted) {
           _showResultDialog(mealData);
           _mealController.clear();
@@ -123,14 +132,18 @@ User description: $text
         }
       } else {
         // Show specific API error for debugging
-        String errorMsg = responseData["error"]?["message"] ?? "Status ${response.statusCode}";
+        String errorMsg =
+            responseData["error"]?["message"] ??
+            "Status ${response.statusCode}";
         throw Exception("API Error: $errorMsg");
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Error: ${e.toString().replaceAll('Exception: ', '')}"),
+            content: Text(
+              "Error: ${e.toString().replaceAll('Exception: ', '')}",
+            ),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -160,11 +173,18 @@ User description: $text
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(data['mealName'] ?? "Meal Analysis", style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          data['mealName'] ?? "Meal Analysis",
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildNutrientRow("🔥 Calories", "${data['calories']} kcal", Colors.orange),
+            _buildNutrientRow(
+              "🔥 Calories",
+              "${data['calories']} kcal",
+              Colors.orange,
+            ),
             _buildNutrientRow("🍗 Protein", "${data['protein']}g", Colors.red),
             _buildNutrientRow("🍞 Carbs", "${data['carbs']}g", Colors.blue),
             _buildNutrientRow("🥑 Fats", "${data['fats']}g", Colors.green),
@@ -173,7 +193,10 @@ User description: $text
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("CLOSE", style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              "CLOSE",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -187,7 +210,14 @@ User description: $text
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(fontSize: 16)),
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
         ],
       ),
     );
@@ -197,7 +227,10 @@ User description: $text
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("AI Nutrition Scanner", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          "AI Nutrition Scanner",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -207,9 +240,17 @@ User description: $text
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [Colors.orange.shade700, Colors.orange.shade400]),
+                gradient: LinearGradient(
+                  colors: [Colors.orange.shade700, Colors.orange.shade400],
+                ),
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(color: Colors.orange.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 5))],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.orange.withValues(alpha: 0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
               ),
               child: const Column(
                 children: [
@@ -217,7 +258,14 @@ User description: $text
                     children: [
                       Icon(Icons.restaurant, color: Colors.white, size: 30),
                       SizedBox(width: 15),
-                      Text("What are you eating?", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text(
+                        "What are you eating?",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ],
                   ),
                   SizedBox(height: 10),
@@ -233,10 +281,15 @@ User description: $text
               controller: _mealController,
               maxLines: 3,
               decoration: InputDecoration(
-                hintText: "E.g., I had 2 boiled eggs and a small glass of orange juice...",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                hintText:
+                    "E.g., I had 2 boiled eggs and a small glass of orange juice...",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
                 filled: true,
-                fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.grey[900] : Colors.grey[100],
+                fillColor: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.grey[900]
+                    : Colors.grey[100],
               ),
             ),
             const SizedBox(height: 20),
@@ -262,11 +315,19 @@ User description: $text
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(15),
-                    child: Image.file(_image!, height: 200, width: double.infinity, fit: BoxFit.cover),
+                    child: Image.file(
+                      _image!,
+                      height: 200,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                   IconButton(
                     onPressed: () => setState(() => _image = null),
-                    icon: const CircleAvatar(backgroundColor: Colors.red, child: Icon(Icons.close, color: Colors.white)),
+                    icon: const CircleAvatar(
+                      backgroundColor: Colors.red,
+                      child: Icon(Icons.close, color: Colors.white),
+                    ),
                   ),
                 ],
               ),
@@ -279,11 +340,19 @@ User description: $text
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange.shade700,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
                 ),
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Analyze & Log Meal 🚀", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    : const Text(
+                        "Analyze & Log Meal 🚀",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 40),
@@ -294,7 +363,11 @@ User description: $text
     );
   }
 
-  Widget _buildActionButton({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(15),
@@ -327,12 +400,17 @@ User description: $text
         if (snapshot.hasError) {
           return const Center(child: Text("Error loading meals"));
         }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox();
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const SizedBox();
+        }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Recent Meals", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              "Recent Meals",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 15),
             ...snapshot.data!.docs.map((doc) {
               final data = doc.data() as Map<String, dynamic>;
@@ -349,20 +427,38 @@ User description: $text
                   child: const Icon(Icons.delete, color: Colors.white),
                 ),
                 onDismissed: (direction) {
-                  FirebaseFirestore.instance.collection('meals').doc(doc.id).delete();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Meal deleted")),
-                  );
+                  FirebaseFirestore.instance
+                      .collection('meals')
+                      .doc(doc.id)
+                      .delete();
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text("Meal deleted")));
                 },
                 child: Card(
                   margin: const EdgeInsets.only(bottom: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: ListTile(
-                    leading: const CircleAvatar(backgroundColor: Colors.orangeAccent, child: Icon(Icons.lunch_dining, color: Colors.white)),
-                    title: Text(data['mealName'] ?? "Unknown Meal", style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text("${data['calories']} kcal | P: ${data['protein']}g | C: ${data['carbs']}g | F: ${data['fats']}g"),
+                    leading: const CircleAvatar(
+                      backgroundColor: Colors.orangeAccent,
+                      child: Icon(Icons.lunch_dining, color: Colors.white),
+                    ),
+                    title: Text(
+                      data['mealName'] ?? "Unknown Meal",
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      "${data['calories']} kcal | P: ${data['protein']}g | C: ${data['carbs']}g | F: ${data['fats']}g",
+                    ),
                     trailing: Text(
-                      data['timestamp'] != null ? (data['timestamp'] as Timestamp).toDate().toString().substring(11, 16) : "",
+                      data['timestamp'] != null
+                          ? (data['timestamp'] as Timestamp)
+                                .toDate()
+                                .toString()
+                                .substring(11, 16)
+                          : "",
                       style: const TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ),

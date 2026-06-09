@@ -43,10 +43,7 @@ class _LoginPageState extends State<LoginPage>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  LoginForm(),
-                  SignupForm(),
-                ],
+                children: [LoginForm(), SignupForm()],
               ),
             ),
           ],
@@ -127,11 +124,11 @@ class _SignupFormState extends State<SignupForm> {
 
     try {
       // 1. Create Auth user
-      final userCredential =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email.text.trim(),
-        password: password.text.trim(),
-      );
+      final userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: email.text.trim(),
+            password: password.text.trim(),
+          );
 
       final uid = userCredential.user!.uid;
 
@@ -146,9 +143,9 @@ class _SignupFormState extends State<SignupForm> {
         'createdAt': FieldValue.serverTimestamp(),
       });
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? "Signup failed")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message ?? "Signup failed")));
     }
 
     setState(() => isLoading = false);
@@ -160,33 +157,43 @@ class _SignupFormState extends State<SignupForm> {
       child: Column(
         children: [
           TextField(
-              controller: firstName,
-              decoration: InputDecoration(labelText: "First Name")),
+            controller: firstName,
+            decoration: InputDecoration(labelText: "First Name"),
+          ),
           TextField(
-              controller: lastName,
-              decoration: InputDecoration(labelText: "Last Name")),
+            controller: lastName,
+            decoration: InputDecoration(labelText: "Last Name"),
+          ),
           TextField(
-              controller: age,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: "Age")),
+            controller: age,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: "Age"),
+          ),
           TextField(
-              controller: height,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: "Height (m)")),
+            controller: height,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: "Height (m)"),
+          ),
           TextField(
-              controller: goalWeight,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: "Goal Weight (kg)")),
+            controller: goalWeight,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: "Goal Weight (kg)"),
+          ),
           TextField(
-              controller: email, decoration: InputDecoration(labelText: "Email")),
+            controller: email,
+            decoration: InputDecoration(labelText: "Email"),
+          ),
           TextField(
-              controller: password,
-              obscureText: true,
-              decoration: InputDecoration(labelText: "Password")),
+            controller: password,
+            obscureText: true,
+            decoration: InputDecoration(labelText: "Password"),
+          ),
           SizedBox(height: 20),
           ElevatedButton(
             onPressed: isLoading ? null : signup,
-            child: isLoading ? CircularProgressIndicator() : Text("Create Account"),
+            child: isLoading
+                ? CircularProgressIndicator()
+                : Text("Create Account"),
           ),
         ],
       ),

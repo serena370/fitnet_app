@@ -71,14 +71,17 @@ class _WaterPageState extends State<WaterPage> {
   }
 
   Future<void> _showNotification() async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'water_reminder_channel',
-      'Water Reminder',
-      channelDescription: 'Daily hydration reminders',
-      importance: Importance.max,
-      priority: Priority.high,
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'water_reminder_channel',
+          'Water Reminder',
+          channelDescription: 'Daily hydration reminders',
+          importance: Importance.max,
+          priority: Priority.high,
+        );
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
     );
-    const NotificationDetails details = NotificationDetails(android: androidDetails);
     await notificationsPlugin.show(
       1001,
       'Time to drink water! 💧',
@@ -93,7 +96,7 @@ class _WaterPageState extends State<WaterPage> {
       initialTime: TimeOfDay.now(),
       helpText: "SELECT REMINDER TIME",
     );
-    
+
     if (picked != null) {
       final now = DateTime.now();
       var reminderDateTime = DateTime(
@@ -153,9 +156,9 @@ class _WaterPageState extends State<WaterPage> {
         .collection('water_logs')
         .doc(_getTodayId())
         .set({
-      'amountMl': currentMl,
-      'timestamp': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+          'amountMl': currentMl,
+          'timestamp': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
   }
 
   Future<void> _resetWater() async {
@@ -171,10 +174,7 @@ class _WaterPageState extends State<WaterPage> {
         .doc(user.uid)
         .collection('water_logs')
         .doc(_getTodayId())
-        .set({
-      'amountMl': 0,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+        .set({'amountMl': 0, 'timestamp': FieldValue.serverTimestamp()});
   }
 
   @override
@@ -182,17 +182,22 @@ class _WaterPageState extends State<WaterPage> {
     double progress = (currentMl / dailyGoalMl).clamp(0.0, 1.0);
     bool isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Hydration Tracker", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          "Hydration Tracker",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
             onPressed: _resetWater,
             tooltip: "Reset Today",
-          )
+          ),
         ],
       ),
       body: Column(
@@ -206,11 +211,18 @@ class _WaterPageState extends State<WaterPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.timer_outlined, size: 18, color: Colors.blueAccent),
+                  const Icon(
+                    Icons.timer_outlined,
+                    size: 18,
+                    color: Colors.blueAccent,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     "Reminder in: ${_formatDuration(_timeLeft)}",
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blueAccent,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   GestureDetector(
@@ -218,12 +230,16 @@ class _WaterPageState extends State<WaterPage> {
                       _timer?.cancel();
                       _targetDateTime = null;
                     }),
-                    child: const Icon(Icons.cancel, size: 18, color: Colors.grey),
-                  )
+                    child: const Icon(
+                      Icons.cancel,
+                      size: 18,
+                      color: Colors.grey,
+                    ),
+                  ),
                 ],
               ),
             ),
-          
+
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -232,13 +248,18 @@ class _WaterPageState extends State<WaterPage> {
                 children: [
                   ElevatedButton.icon(
                     onPressed: _setReminder,
-                    icon: const Icon(Icons.notifications_active_outlined, size: 18),
+                    icon: const Icon(
+                      Icons.notifications_active_outlined,
+                      size: 18,
+                    ),
                     label: const Text("Set Water Reminder"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue.withOpacity(0.05),
                       foregroundColor: Colors.blueAccent,
                       elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 30),
@@ -260,28 +281,38 @@ class _WaterPageState extends State<WaterPage> {
                       ),
                       Column(
                         children: [
-                          const Icon(Icons.water_drop, size: 50, color: Colors.blueAccent),
+                          const Icon(
+                            Icons.water_drop,
+                            size: 50,
+                            color: Colors.blueAccent,
+                          ),
                           const SizedBox(height: 10),
                           Text(
                             "${(progress * 100).toInt()}%",
-                            style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontSize: 40,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             "$currentMl / $dailyGoalMl ml",
-                            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 16,
+                            ),
                           ),
                         ],
                       ),
                     ],
                   ),
                   const SizedBox(height: 50),
-                  
+
                   const Text(
                     "Quick Add",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 20),
-                  
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -290,25 +321,34 @@ class _WaterPageState extends State<WaterPage> {
                       _buildWaterButton(500, Icons.water_drop),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 40),
-                  
+
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.blue.withOpacity(0.1) : Colors.blue[50],
+                      color: isDark
+                          ? Colors.blue.withOpacity(0.1)
+                          : Colors.blue[50],
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.info_outline, color: Colors.blueAccent),
+                        const Icon(
+                          Icons.info_outline,
+                          color: Colors.blueAccent,
+                        ),
                         const SizedBox(width: 15),
                         Expanded(
                           child: Text(
-                            progress >= 1.0 
-                              ? "Goal reached! You are perfectly hydrated today. 💧"
-                              : "Drinking water helps boost metabolism and keeps your skin glowing!",
-                            style: TextStyle(color: isDark ? Colors.blue[100] : Colors.blue[900]),
+                            progress >= 1.0
+                                ? "Goal reached! You are perfectly hydrated today. 💧"
+                                : "Drinking water helps boost metabolism and keeps your skin glowing!",
+                            style: TextStyle(
+                              color: isDark
+                                  ? Colors.blue[100]
+                                  : Colors.blue[900],
+                            ),
                           ),
                         ),
                       ],
