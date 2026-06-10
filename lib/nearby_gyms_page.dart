@@ -24,6 +24,7 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
   }
 
   Future<void> _loadNearbyGyms() async {
+    if (!mounted) return;
     setState(() {
       _isLoadingLocation = true;
       _isLoadingMap = false;
@@ -42,6 +43,7 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
       final controller = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setBackgroundColor(Colors.white)
+        ..setUserAgent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
         ..setNavigationDelegate(
           NavigationDelegate(
             onPageStarted: (_) {
@@ -52,13 +54,34 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
             },
             onWebResourceError: (error) {
               if (!mounted || error.isForMainFrame != true) return;
+              // Ignore some common harmless errors
+              if (error.description.contains('net::ERR_CACHE_MISS') || 
+                  error.description.contains('net::ERR_CONNECTION_REFUSED')) {
+                return;
+              }
               setState(() {
                 _isLoadingMap = false;
                 _errorMessage =
-                'The in-app map could not load. You can still open nearby gyms in Google Maps.';
+                'The in-app map encountered an error. You can open it in Google Maps instead.';
               });
             },
-            onNavigationRequest: (_) => NavigationDecision.navigate,
+            onNavigationRequest: (NavigationRequest request) async {
+              final url = request.url;
+              if (url.startsWith('http://') || url.startsWith('https://')) {
+                return NavigationDecision.navigate;
+              }
+              
+              // Handle non-web schemes (intent://, geo:, comgooglemaps:, etc)
+              try {
+                final uri = Uri.parse(url);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              } catch (e) {
+                debugPrint('Could not launch custom scheme: $e');
+              }
+              return NavigationDecision.prevent;
+            },
           ),
         )
         ..loadRequest(uri);
@@ -76,7 +99,7 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
         _isLoadingMap = false;
         _errorMessage = error is _NearbyGymsException
             ? error.toString()
-            : 'The in-app map could not load. You can still open nearby gyms in Google Maps.';
+            : 'The in-app map could not load. Please check your internet or use Google Maps.';
       });
     }
   }
@@ -132,7 +155,17 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nearby Gyms')),
+      appBar: AppBar(
+        title: const Text('Nearby Gyms'),
+        actions: [
+          if (_mapsUri != null)
+            IconButton(
+              icon: const Icon(Icons.map_outlined),
+              onPressed: _openInGoogleMaps,
+              tooltip: 'Open in Google Maps',
+            ),
+        ],
+      ),
       body: Stack(
         children: [
           if (_controller != null && _errorMessage == null)
@@ -216,7 +249,7 @@ class _ErrorState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.location_off_outlined, size: 56),
+              const Icon(Icons.location_off_outlined, size: 56, color: Colors.grey),
               const SizedBox(height: 16),
               Text(
                 message,
@@ -234,11 +267,12 @@ class _ErrorState extends StatelessWidget {
                     icon: const Icon(Icons.refresh),
                     label: const Text('Retry'),
                   ),
-                  FilledButton.icon(
-                    onPressed: onOpenMaps,
-                    icon: const Icon(Icons.map_outlined),
-                    label: const Text('Open in Google Maps'),
-                  ),
+                  if (onOpenMaps != null)
+                    FilledButton.icon(
+                      onPressed: onOpenMaps,
+                      icon: const Icon(Icons.map_outlined),
+                      label: const Text('Open in Google Maps'),
+                    ),
                 ],
               ),
             ],
