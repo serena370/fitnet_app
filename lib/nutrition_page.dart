@@ -20,7 +20,7 @@ class _NutritionPageState extends State<NutritionPage> {
   final ImagePicker _picker = ImagePicker();
 
   // Using the API key from your google-services.json which is valid for Google Cloud services
-  final String geminiKey = "YOUR_API_KEY";
+  final String geminiKey = "";
 
   Future<void> _pickImage(ImageSource source) async {
     final pickedFile = await _picker.pickImage(
@@ -59,12 +59,7 @@ Do not include any markdown formatting or extra text.
 User description: $text
 """;
 
-      final url = Uri.parse(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiKey",
-      );
-
       Map<String, dynamic> requestBody;
-
       if (_image != null) {
         final imageBytes = await _image!.readAsBytes();
         final base64Image = base64Encode(imageBytes);
@@ -96,46 +91,63 @@ User description: $text
         };
       }
 
-      final response = await http.post(
-        url,
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(requestBody),
-      );
+      final List<String> models = ["gemini-2.5-flash", "gemini-3.1-flash-lite"];
 
-      final responseData = jsonDecode(response.body);
+      for (String model in models) {
+        try {
+          final url = Uri.parse(
+            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$geminiKey",
+          );
 
-      if (response.statusCode == 200) {
-        if (responseData["candidates"] == null ||
-            responseData["candidates"].isEmpty) {
-          throw Exception("AI returned no results. Try a clearer description.");
+          final response = await http.post(
+            url,
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode(requestBody),
+          );
+
+          final responseData = jsonDecode(response.body);
+
+          if (response.statusCode == 200) {
+            if (responseData["candidates"] == null ||
+                responseData["candidates"].isEmpty) {
+              throw Exception("AI returned no results. Try a clearer description.");
+            }
+
+            String resultText =
+                responseData["candidates"][0]["content"]["parts"][0]["text"];
+
+            // Better JSON extraction
+            int firstBrace = resultText.indexOf('{');
+            int lastBrace = resultText.lastIndexOf('}');
+            if (firstBrace == -1 || lastBrace == -1) {
+              throw Exception("Could not read nutritional data. Try again.");
+            }
+
+            String jsonString = resultText.substring(firstBrace, lastBrace + 1);
+            final mealData = jsonDecode(jsonString);
+
+            await _saveMeal(mealData);
+
+            if (mounted) {
+              _showResultDialog(mealData);
+              _mealController.clear();
+              setState(() => _image = null);
+            }
+            return; // Success, exit function
+          } else if (response.statusCode == 429 && model != models.last) {
+            // Rate limit reached, try next model
+            continue;
+          } else {
+            String errorMsg =
+                responseData["error"]?["message"] ??
+                "Status ${response.statusCode}";
+            throw Exception("API Error ($model): $errorMsg");
+          }
+        } catch (e) {
+          if (model == models.last) {
+            rethrow; // Rethrow on the last model failure
+          }
         }
-
-        String resultText =
-            responseData["candidates"][0]["content"]["parts"][0]["text"];
-
-        // Better JSON extraction
-        int firstBrace = resultText.indexOf('{');
-        int lastBrace = resultText.lastIndexOf('}');
-        if (firstBrace == -1 || lastBrace == -1) {
-          throw Exception("Could not read nutritional data. Try again.");
-        }
-
-        String jsonString = resultText.substring(firstBrace, lastBrace + 1);
-        final mealData = jsonDecode(jsonString);
-
-        await _saveMeal(mealData);
-
-        if (mounted) {
-          _showResultDialog(mealData);
-          _mealController.clear();
-          setState(() => _image = null);
-        }
-      } else {
-        // Show specific API error for debugging
-        String errorMsg =
-            responseData["error"]?["message"] ??
-            "Status ${response.statusCode}";
-        throw Exception("API Error: $errorMsg");
       }
     } catch (e) {
       if (mounted) {

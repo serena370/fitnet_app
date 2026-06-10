@@ -29,10 +29,8 @@ class _CoachPageState extends State<CoachPage> {
   bool isSavingEntry = false;
 
   // 🔑 Gemini API Configuration
-  final String geminiKey = const String.fromEnvironment(
-    'GEMINI_API_KEY',
-    defaultValue: 'YOUR_API_KEY',
-  );
+  final String geminiKey = "";
+
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -47,10 +45,10 @@ class _CoachPageState extends State<CoachPage> {
   }
 
   String _buildSystemPrompt(
-    Map<String, dynamic> userData,
-    List<QueryDocumentSnapshot> weights,
-    List<QueryDocumentSnapshot> meals,
-  ) {
+      Map<String, dynamic> userData,
+      List<QueryDocumentSnapshot> weights,
+      List<QueryDocumentSnapshot> meals,
+      ) {
     double currentWeight = weights.isNotEmpty
         ? (weights.first['weight'] as num).toDouble()
         : 0;
@@ -64,17 +62,18 @@ class _CoachPageState extends State<CoachPage> {
     String mealHistory = meals.isEmpty
         ? "No meals logged today."
         : meals
-              .map((m) {
-                final d = m.data() as Map<String, dynamic>;
-                return "- ${d['mealName']}: ${d['calories']}kcal (P:${d['protein']}g, C:${d['carbs']}g, F:${d['fats']}g)";
-              })
-              .join("\\n");
+        .map((m) {
+      final d = m.data() as Map<String, dynamic>;
+      return "- ${d['mealName']}: ${d['calories']}kcal (P:${d['protein']}g, C:${d['carbs']}g, F:${d['fats']}g)";
+    })
+        .join("\\n");
 
     return "SYSTEM INSTRUCTION: You are 'FitNet AI', a professional health coach. "
         "User Data: Name: ${userData['firstName']}, Weight: $currentWeight kg, "
         "Height: $height m, BMI: ${bmi.toStringAsFixed(1)}, Goal: $goal kg. "
         "RECENT MEALS LOGGED: \\n$mealHistory\\n"
-        "Use this nutrition data to give specific advice. If they ate too many calories, be firm but helpful. "
+        "IMPORTANT: Reference the meal history ONLY if the user specifically asks about their diet, nutrition, or food. "
+        "Do NOT mention or repeat the meal list in every response. "
         "Keep responses helpful, short, and use emojis. Respond to the user's message below.\\n\\n";
   }
 
@@ -87,51 +86,65 @@ class _CoachPageState extends State<CoachPage> {
     });
     _scrollToBottom();
 
-    try {
-      final response = await http.post(
-        Uri.parse(
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiKey",
-        ),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "systemInstruction": {
-            "parts": [
-              {"text": systemContext},
-            ],
-          },
-          "contents": [
-            {
-              "role": "user",
+    final List<String> models = ["gemini-2.5-flash", "gemini-3.1-flash-lite"];
+
+    for (String model in models) {
+      try {
+        final response = await http.post(
+          Uri.parse(
+            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$geminiKey",
+          ),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({
+            "systemInstruction": {
               "parts": [
-                {"text": text},
+                {"text": systemContext},
               ],
             },
-          ],
-        }),
-      );
+            "contents": [
+              {
+                "role": "user",
+                "parts": [
+                  {"text": text},
+                ],
+              },
+            ],
+          }),
+        );
 
-      final data = jsonDecode(response.body);
+        final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200 && data["candidates"] != null) {
-        String reply = data["candidates"][0]["content"]["parts"][0]["text"];
-        setState(() {
-          messages.add(ChatMessage(text: reply, isUser: false));
-          isTyping = false;
-        });
-      } else {
-        String error = data["error"]?["message"] ?? "API Error";
-        setState(() {
-          messages.add(ChatMessage(text: "Coach Error: $error", isUser: false));
-          isTyping = false;
-        });
+        if (response.statusCode == 200 && data["candidates"] != null) {
+          String reply = data["candidates"][0]["content"]["parts"][0]["text"];
+          setState(() {
+            messages.add(ChatMessage(text: reply, isUser: false));
+            isTyping = false;
+          });
+          _scrollToBottom();
+          return; // Exit loop on success
+        } else if (response.statusCode == 429 && model != models.last) {
+          // Rate limit reached, try the next model
+          continue;
+        } else {
+          String error = data["error"]?["message"] ?? "API Error";
+          setState(() {
+            messages.add(ChatMessage(text: "Coach Error ($model): $error", isUser: false));
+            isTyping = false;
+          });
+          _scrollToBottom();
+          return;
+        }
+      } catch (e) {
+        if (model == models.last) {
+          setState(() {
+            messages.add(ChatMessage(text: "Connection Error: $e", isUser: false));
+            isTyping = false;
+          });
+          _scrollToBottom();
+          return;
+        }
       }
-    } catch (e) {
-      setState(() {
-        messages.add(ChatMessage(text: "Connection Error: $e", isUser: false));
-        isTyping = false;
-      });
     }
-    _scrollToBottom();
   }
 
   @override
@@ -139,6 +152,7 @@ class _CoachPageState extends State<CoachPage> {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text(
           "Smart AI Coach",
@@ -155,80 +169,76 @@ class _CoachPageState extends State<CoachPage> {
       body: user == null
           ? const Center(child: Text("Please login"))
           : StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user.uid)
-                  .snapshots(),
-              builder: (context, userSnap) {
-                return StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('weights')
-                      .where('userId', isEqualTo: user.uid)
-                      .orderBy('timestamp', descending: true)
-                      .snapshots(),
-                  builder: (context, weightSnap) {
-                    return StreamBuilder<QuerySnapshot>(
-                      // Also fetch recent meals to give context to the AI
-                      stream: FirebaseFirestore.instance
-                          .collection('meals')
-                          .where('userId', isEqualTo: user.uid)
-                          .orderBy('timestamp', descending: true)
-                          .limit(10)
-                          .snapshots(),
-                      builder: (context, mealSnap) {
-                        if (!userSnap.hasData ||
-                            !weightSnap.hasData ||
-                            !mealSnap.hasData) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .snapshots(),
+        builder: (context, userSnap) {
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('weights')
+                .where('userId', isEqualTo: user.uid)
+                .orderBy('timestamp', descending: true)
+                .snapshots(),
+            builder: (context, weightSnap) {
+              return StreamBuilder<QuerySnapshot>(
+                // Also fetch recent meals to give context to the AI
+                stream: FirebaseFirestore.instance
+                    .collection('meals')
+                    .where('userId', isEqualTo: user.uid)
+                    .orderBy('timestamp', descending: true)
+                    .limit(10)
+                    .snapshots(),
+                builder: (context, mealSnap) {
+                  if (!userSnap.hasData ||
+                      !weightSnap.hasData ||
+                      !mealSnap.hasData) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
 
-                        final userData =
-                            userSnap.data!.data() as Map<String, dynamic>? ??
-                            {};
-                        final weights = weightSnap.data!.docs;
-                        final meals = mealSnap.data!.docs;
-                        final systemContext = _buildSystemPrompt(
-                          userData,
-                          weights,
-                          meals,
-                        );
+                  final userData =
+                      userSnap.data!.data() as Map<String, dynamic>? ??
+                          {};
+                  final weights = weightSnap.data!.docs;
+                  final meals = mealSnap.data!.docs;
+                  final systemContext = _buildSystemPrompt(
+                    userData,
+                    weights,
+                    meals,
+                  );
 
-                        return Column(
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: ListView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
                           children: [
                             if (messages.isEmpty) _buildHeader(userData),
-                            Expanded(
-                              child: ListView.builder(
-                                controller: scrollController,
-                                padding: const EdgeInsets.all(16),
-                                itemCount: messages.length + (isTyping ? 1 : 0),
-                                itemBuilder: (context, index) {
-                                  if (isTyping && index == messages.length) {
-                                    return _buildTypingIndicator();
-                                  }
-                                  return _buildChatBubble(messages[index]);
-                                },
-                              ),
-                            ),
-                            if (messages.isEmpty)
-                              _buildSuggestions(systemContext),
-                            _buildInputArea(systemContext),
+                            ...messages.map((m) => _buildChatBubble(m)).toList(),
+                            if (isTyping) _buildTypingIndicator(),
+                            if (messages.isEmpty) _buildSuggestions(systemContext),
                           ],
-                        );
-                      },
-                    );
-                  },
-                );
-              },
-            ),
+                        ),
+                      ),
+                      _buildInputArea(systemContext),
+                    ],
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
   Widget _buildHeader(Map<String, dynamic> userData) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -288,17 +298,17 @@ class _CoachPageState extends State<CoachPage> {
       "Diet tips for weight loss",
     ];
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Wrap(
         spacing: 8,
         children: suggestions
             .map(
               (s) => ActionChip(
-                label: Text(s, style: const TextStyle(fontSize: 12)),
-                onPressed: () => sendMessage(s, context),
-                backgroundColor: Colors.blue.withOpacity(0.05),
-              ),
-            )
+            label: Text(s, style: const TextStyle(fontSize: 12)),
+            onPressed: () => sendMessage(s, context),
+            backgroundColor: Colors.blue.withOpacity(0.05),
+          ),
+        )
             .toList(),
       ),
     );
@@ -489,7 +499,7 @@ class _CoachPageState extends State<CoachPage> {
 
   Widget _buildTypingIndicator() {
     return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
           SizedBox(
@@ -513,7 +523,6 @@ class _CoachPageState extends State<CoachPage> {
 
   Widget _buildInputArea(String systemContext) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
         boxShadow: [
@@ -524,49 +533,85 @@ class _CoachPageState extends State<CoachPage> {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: chatController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: "Ask your AI Coach...",
-                filled: true,
-                fillColor: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.grey[900]
-                    : Colors.grey[100],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: chatController,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: "Ask your AI Coach...",
+                    filled: true,
+                    fillColor: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.grey[900]
+                        : Colors.grey[100],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                  ),
+                  onSubmitted: (val) {
+                    final text = chatController.text;
+                    chatController.clear();
+                    sendMessage(text, systemContext);
+                  },
                 ),
               ),
-              onSubmitted: (val) {
-                final text = chatController.text;
-                chatController.clear();
-                sendMessage(text, systemContext);
-              },
-            ),
+              const SizedBox(width: 8),
+              CircleAvatar(
+                backgroundColor: Colors.blue,
+                child: IconButton(
+                  icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                  onPressed: () {
+                    final text = chatController.text;
+                    chatController.clear();
+                    sendMessage(text, systemContext);
+                  },
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          CircleAvatar(
-            backgroundColor: Colors.blue,
-            child: IconButton(
-              icon: const Icon(Icons.send, color: Colors.white, size: 20),
-              onPressed: () {
-                final text = chatController.text;
-                chatController.clear();
-                sendMessage(text, systemContext);
-              },
-            ),
-          ),
-        ],
+        ),
       ),
     );
+  }
+
+  Future<void> _save (ChatMessage msg) async {
+    final draft = _GoalDraft.fromAiText(msg.text);
+    final confirmed = await showDialog<_GoalDraft>(
+      context: context,
+      builder: (context) => _SaveGoalDialog(initialDraft: draft),
+    );
+    if (confirmed == null) return;
+
+    setState(() => isSavingEntry = true);
+    try {
+      await _fitnessRepository.addGoal(
+        title: confirmed.title,
+        targetValue: confirmed.targetValue,
+        unit: confirmed.unit,
+        period: confirmed.period,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Goal saved from AI suggestion.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save goal: $error')));
+    } finally {
+      if (mounted) setState(() => isSavingEntry = false);
+    }
   }
 }
 
@@ -706,7 +751,7 @@ class _SaveMealDialogState extends State<_SaveMealDialog> {
               decoration: const InputDecoration(labelText: 'Meal name'),
             ),
             DropdownButtonFormField<String>(
-              initialValue: _mealType,
+              value: _mealType,
               decoration: const InputDecoration(labelText: 'Meal type'),
               items: const [
                 DropdownMenuItem(value: 'Breakfast', child: Text('Breakfast')),
@@ -813,7 +858,7 @@ class _SaveGoalDialogState extends State<_SaveGoalDialog> {
               decoration: const InputDecoration(labelText: 'Goal title'),
             ),
             DropdownButtonFormField<String>(
-              initialValue: _period,
+              value: _period,
               decoration: const InputDecoration(labelText: 'Period'),
               items: const [
                 DropdownMenuItem(value: 'Daily', child: Text('Daily')),

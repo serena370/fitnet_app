@@ -35,7 +35,7 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
       final position = await _getCurrentPosition();
       final uri = Uri.parse(
         'https://www.google.com/maps/search/gyms/'
-        '@${position.latitude},${position.longitude},14z',
+            '@${position.latitude},${position.longitude},14z',
       );
       _mapsUri = uri;
 
@@ -55,7 +55,7 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
               setState(() {
                 _isLoadingMap = false;
                 _errorMessage =
-                    'The in-app map could not load. You can still open nearby gyms in Google Maps.';
+                'The in-app map could not load. You can still open nearby gyms in Google Maps.';
               });
             },
             onNavigationRequest: (_) => NavigationDecision.navigate,
