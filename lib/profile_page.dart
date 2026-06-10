@@ -7,7 +7,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 
+import 'widgets/friendly_error.dart';
+
 class ProfilePage extends StatefulWidget {
+  const ProfilePage({super.key});
+
   @override
   State<ProfilePage> createState() => _ProfilePageState();
 }
@@ -86,9 +90,12 @@ class _ProfilePageState extends State<ProfilePage> {
         });
       }
     } catch (e) {
-      debugPrint("Error picking image: $e");
+      logDebugError('Error picking image', e);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Picker Error: Please restart the app fully.")),
+        const SnackBar(
+          content: Text("Couldn't open the image picker. Please try again."),
+        ),
       );
     }
   }
@@ -150,10 +157,13 @@ class _ProfilePageState extends State<ProfilePage> {
         Navigator.pop(context, true);
       }
     } catch (e) {
+      logDebugError('Error saving profile', e);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error saving profile: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Couldn't save your profile. Please try again."),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => isSaving = false);
@@ -178,8 +188,9 @@ class _ProfilePageState extends State<ProfilePage> {
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: () async {
+              final navigator = Navigator.of(context);
               await FirebaseAuth.instance.signOut();
-              if (mounted) Navigator.pop(context);
+              if (mounted) navigator.pop();
             },
           ),
         ],
@@ -196,7 +207,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.blue.withOpacity(0.1),
+                          color: Colors.blue.withValues(alpha: 0.1),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),
@@ -276,7 +287,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             _buildModernField(
               goalController,
-              "Weight Goal (kg)",
+              "Target Weight (kg)",
               Icons.auto_graph_rounded,
               isNumber: true,
             ),
@@ -345,7 +356,7 @@ class _ProfilePageState extends State<ProfilePage> {
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withOpacity(0.1)),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
       ),
       child: TextFormField(
         controller: controller,

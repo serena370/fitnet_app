@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/fitness_goal.dart';
 import '../models/meal.dart';
 import '../models/workout.dart';
+import '../storage/meal_cache.dart';
 
 class FitnessRepository {
   FitnessRepository({FirebaseFirestore? firestore, FirebaseAuth? auth})
@@ -84,15 +87,39 @@ class FitnessRepository {
         .map((snapshot) {
           final meals = snapshot.docs.map(Meal.fromFirestore).toList();
           meals.sort((a, b) => b.date.compareTo(a.date));
+          // Best-effort mirror into the local SQLite cache so meal history
+          // stays readable offline. Firestore remains the source of truth.
+          unawaited(MealCache.instance.replaceAll(_userId, meals));
           return meals;
         });
   }
 
-  Future<void> addMeal({
+  /// Reads the local SQLite mirror, used as a fallback when Firestore is
+  /// unreachable.
+  Future<List<Meal>> loadCachedMeals() {
+    return MealCache.instance.readAll(_userId);
+  }
+
+  Stream<FitnessStats> watchDashboardStats() {
+    return _firestore
+        .collection('meals')
+        .where('userId', isEqualTo: _userId)
+        .snapshots()
+        .asyncMap((_) => loadDashboardStats());
+  }
+
+  Future<String> addMeal({
     required String name,
     required String mealType,
     required int calories,
     String notes = '',
+    double quantity = 1,
+    String unit = '',
+    bool caloriesEstimated = false,
+    String source = 'manual',
+    int? protein,
+    int? carbs,
+    int? fats,
   }) async {
     final meal = Meal(
       id: '',
@@ -102,9 +129,51 @@ class FitnessRepository {
       calories: calories,
       date: DateTime.now(),
       notes: notes,
+      quantity: quantity,
+      unit: unit,
+      caloriesEstimated: caloriesEstimated,
+      source: source,
+      protein: protein,
+      carbs: carbs,
+      fats: fats,
     );
 
-    await _firestore.collection('meals').add(meal.toFirestore());
+    final document = await _firestore
+        .collection('meals')
+        .add(meal.toFirestore());
+    return document.id;
+  }
+
+  Future<void> updateMeal({
+    required String mealId,
+    required String name,
+    required String mealType,
+    required int calories,
+    String notes = '',
+    double quantity = 1,
+    String unit = '',
+    bool caloriesEstimated = false,
+    int? protein,
+    int? carbs,
+    int? fats,
+  }) {
+    return _updateOwnedDocument(
+      collection: 'meals',
+      documentId: mealId,
+      values: {
+        'name': name,
+        'mealName': name,
+        'mealType': mealType,
+        'calories': calories,
+        'notes': notes,
+        'quantity': quantity,
+        'unit': unit,
+        'caloriesEstimated': caloriesEstimated,
+        'protein': ?protein,
+        'carbs': ?carbs,
+        'fats': ?fats,
+      },
+    );
   }
 
   Stream<List<FitnessGoal>> watchGoals() {
@@ -245,6 +314,41 @@ class FitnessRepository {
 
   Future<void> deleteMeal(String mealId) {
     return _deleteOwnedDocument('meals', mealId);
+  }
+
+  Future<Meal?> deleteMostRecentMeal({bool preferCoachSource = true}) async {
+    final snapshot = await _firestore
+        .collection('meals')
+        .where('userId', isEqualTo: _userId)
+        .get();
+    if (snapshot.docs.isEmpty) return null;
+
+    final docs = [...snapshot.docs];
+    if (preferCoachSource) {
+      final coachDocs = docs
+          .where((doc) => doc.data()['source'] == 'coach')
+          .toList();
+      if (coachDocs.isNotEmpty) {
+        docs
+          ..clear()
+          ..addAll(coachDocs);
+      }
+    }
+
+    docs.sort((a, b) {
+      final aDate =
+          _readDate(a.data()['date']) ?? _readDate(a.data()['timestamp']);
+      final bDate =
+          _readDate(b.data()['date']) ?? _readDate(b.data()['timestamp']);
+      return (bDate ?? DateTime.fromMillisecondsSinceEpoch(0)).compareTo(
+        aDate ?? DateTime.fromMillisecondsSinceEpoch(0),
+      );
+    });
+
+    final latest = docs.first;
+    final meal = Meal.fromFirestore(latest);
+    await latest.reference.delete();
+    return meal;
   }
 
   Future<void> deleteGoal(String goalId) {

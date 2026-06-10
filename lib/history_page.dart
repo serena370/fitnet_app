@@ -6,7 +6,11 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import 'widgets/friendly_error.dart';
+
 class HistoryPage extends StatelessWidget {
+  const HistoryPage({super.key});
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -53,7 +57,7 @@ class HistoryPage extends StatelessWidget {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Center(child: Text("Error: ${snapshot.error}"));
+                  return FriendlyErrorState(error: snapshot.error);
                 }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -106,7 +110,7 @@ class HistoryPage extends StatelessWidget {
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
+                                color: Colors.black.withValues(alpha: 0.05),
                                 blurRadius: 10,
                                 offset: const Offset(0, 5),
                               ),
@@ -163,8 +167,12 @@ class HistoryPage extends StatelessWidget {
                                     show: true,
                                     gradient: LinearGradient(
                                       colors: [
-                                        Colors.blueAccent.withOpacity(0.3),
-                                        Colors.blueAccent.withOpacity(0.0),
+                                        Colors.blueAccent.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                        Colors.blueAccent.withValues(
+                                          alpha: 0.0,
+                                        ),
                                       ],
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
@@ -247,16 +255,17 @@ class HistoryPage extends StatelessWidget {
                                     final backupData =
                                         Map<String, dynamic>.from(data);
                                     final docId = doc.id;
+                                    final messenger = ScaffoldMessenger.of(
+                                      context,
+                                    );
 
                                     await FirebaseFirestore.instance
                                         .collection('weights')
                                         .doc(docId)
                                         .delete();
 
-                                    ScaffoldMessenger.of(
-                                      context,
-                                    ).clearSnackBars();
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    messenger.clearSnackBars();
+                                    messenger.showSnackBar(
                                       SnackBar(
                                         content: const Text("Record removed"),
                                         behavior: SnackBarBehavior.floating,
@@ -323,8 +332,8 @@ class HistoryPage extends StatelessWidget {
                                       leading: Container(
                                         padding: const EdgeInsets.all(10),
                                         decoration: BoxDecoration(
-                                          color: Colors.blueAccent.withOpacity(
-                                            0.1,
+                                          color: Colors.blueAccent.withValues(
+                                            alpha: 0.1,
                                           ),
                                           shape: BoxShape.circle,
                                         ),
@@ -336,7 +345,7 @@ class HistoryPage extends StatelessWidget {
                                       title: Row(
                                         children: [
                                           Text(
-                                            "${weight} kg",
+                                            "$weight kg",
                                             style: const TextStyle(
                                               fontSize: 18,
                                               fontWeight: FontWeight.bold,
@@ -349,8 +358,8 @@ class HistoryPage extends StatelessWidget {
                                               vertical: 2,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: Colors.green.withOpacity(
-                                                0.1,
+                                              color: Colors.green.withValues(
+                                                alpha: 0.1,
                                               ),
                                               borderRadius:
                                                   BorderRadius.circular(5),
@@ -475,7 +484,7 @@ class HistoryPage extends StatelessWidget {
             pw.Row(
               children: [
                 pw.Text(
-                  "Goal Weight: ",
+                  "Target Weight: ",
                   style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                 ),
                 pw.Text("${userData['goalWeight']} kg"),
@@ -540,12 +549,12 @@ class HistoryPage extends StatelessWidget {
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(5),
                         child: pw.Text(
-                          "${(data['bmi'] as num?)?.toStringAsFixed(1) ?? 'N/A'}",
+                          (data['bmi'] as num?)?.toStringAsFixed(1) ?? 'N/A',
                         ),
                       ),
                     ],
                   );
-                }).toList(),
+                }),
               ],
             ),
           ];

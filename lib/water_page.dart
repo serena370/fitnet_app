@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'main.dart' show notificationsPlugin;
+import 'services/reminder_scheduler.dart';
+import 'storage/app_preferences.dart';
 
 class WaterPage extends StatefulWidget {
   const WaterPage({super.key});
@@ -13,7 +13,11 @@ class WaterPage extends StatefulWidget {
 }
 
 class _WaterPageState extends State<WaterPage> {
-  final int dailyGoalMl = 2500; // 2.5 Liters
+  static const int _reminderNotificationId = 1001;
+
+  // Daily goal is a user preference (SharedPreferences), editable in
+  // Settings. Defaults to 2.5 liters.
+  int get dailyGoalMl => AppPreferences.instance.dailyWaterGoalMl;
   int currentMl = 0;
   bool isLoading = true;
 
@@ -37,6 +41,9 @@ class _WaterPageState extends State<WaterPage> {
   void _startTimer() {
     _timer?.cancel();
     _updateTimeLeft();
+    // This timer only drives the on-screen countdown. The notification
+    // itself is OS-scheduled via ReminderScheduler, so it fires even if the
+    // app is closed before the chosen time.
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         setState(() {
@@ -45,7 +52,6 @@ class _WaterPageState extends State<WaterPage> {
       }
       if (_timeLeft.inSeconds <= 0) {
         _timer?.cancel();
-        _showNotification();
         if (mounted) {
           setState(() {
             _targetDateTime = null;
@@ -70,26 +76,6 @@ class _WaterPageState extends State<WaterPage> {
     return "$hours:$minutes:$seconds";
   }
 
-  Future<void> _showNotification() async {
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-          'water_reminder_channel',
-          'Water Reminder',
-          channelDescription: 'Daily hydration reminders',
-          importance: Importance.max,
-          priority: Priority.high,
-        );
-    const NotificationDetails details = NotificationDetails(
-      android: androidDetails,
-    );
-    await notificationsPlugin.show(
-      1001,
-      'Time to drink water! 💧',
-      'Stay hydrated and reach your daily goal!',
-      details,
-    );
-  }
-
   Future<void> _setReminder() async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -110,6 +96,16 @@ class _WaterPageState extends State<WaterPage> {
       if (reminderDateTime.isBefore(now)) {
         reminderDateTime = reminderDateTime.add(const Duration(days: 1));
       }
+
+      ReminderScheduler.schedule(
+        notificationId: _reminderNotificationId,
+        title: 'Time to drink water! 💧',
+        body: 'Stay hydrated and reach your daily goal!',
+        reminderAt: reminderDateTime,
+        channelId: 'water_reminder_channel',
+        channelName: 'Water Reminder',
+        channelDescription: 'Daily hydration reminders',
+      );
 
       setState(() {
         _targetDateTime = reminderDateTime;
@@ -206,7 +202,7 @@ class _WaterPageState extends State<WaterPage> {
           if (_targetDateTime != null)
             Container(
               width: double.infinity,
-              color: Colors.blueAccent.withOpacity(0.1),
+              color: Colors.blueAccent.withValues(alpha: 0.1),
               padding: const EdgeInsets.symmetric(vertical: 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -226,10 +222,13 @@ class _WaterPageState extends State<WaterPage> {
                   ),
                   const SizedBox(width: 10),
                   GestureDetector(
-                    onTap: () => setState(() {
-                      _timer?.cancel();
-                      _targetDateTime = null;
-                    }),
+                    onTap: () {
+                      ReminderScheduler.cancel(_reminderNotificationId);
+                      setState(() {
+                        _timer?.cancel();
+                        _targetDateTime = null;
+                      });
+                    },
                     child: const Icon(
                       Icons.cancel,
                       size: 18,
@@ -254,7 +253,7 @@ class _WaterPageState extends State<WaterPage> {
                     ),
                     label: const Text("Set Water Reminder"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.withOpacity(0.05),
+                      backgroundColor: Colors.blue.withValues(alpha: 0.05),
                       foregroundColor: Colors.blueAccent,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
@@ -274,7 +273,7 @@ class _WaterPageState extends State<WaterPage> {
                         child: CircularProgressIndicator(
                           value: progress,
                           strokeWidth: 15,
-                          backgroundColor: Colors.blue.withOpacity(0.1),
+                          backgroundColor: Colors.blue.withValues(alpha: 0.1),
                           color: Colors.blueAccent,
                           strokeCap: StrokeCap.round,
                         ),
@@ -328,7 +327,7 @@ class _WaterPageState extends State<WaterPage> {
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       color: isDark
-                          ? Colors.blue.withOpacity(0.1)
+                          ? Colors.blue.withValues(alpha: 0.1)
                           : Colors.blue[50],
                       borderRadius: BorderRadius.circular(20),
                     ),

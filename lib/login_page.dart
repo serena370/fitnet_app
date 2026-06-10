@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -43,7 +45,7 @@ class _LoginPageState extends State<LoginPage>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [LoginForm(), SignupForm()],
+                children: const [LoginForm(), SignupForm()],
               ),
             ),
           ],
@@ -54,6 +56,8 @@ class _LoginPageState extends State<LoginPage>
 }
 
 class LoginForm extends StatefulWidget {
+  const LoginForm({super.key});
+
   @override
   State<LoginForm> createState() => _LoginFormState();
 }
@@ -82,6 +86,7 @@ class _LoginFormState extends State<LoginForm> {
           onPressed: isLoading
               ? null
               : () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   setState(() => isLoading = true);
                   try {
                     await FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -89,11 +94,11 @@ class _LoginFormState extends State<LoginForm> {
                       password: passwordController.text.trim(),
                     );
                   } on FirebaseAuthException catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       SnackBar(content: Text(e.message ?? "Login failed")),
                     );
                   }
-                  setState(() => isLoading = false);
+                  if (mounted) setState(() => isLoading = false);
                 },
           child: isLoading ? CircularProgressIndicator() : Text("Login"),
         ),
@@ -103,6 +108,8 @@ class _LoginFormState extends State<LoginForm> {
 }
 
 class SignupForm extends StatefulWidget {
+  const SignupForm({super.key});
+
   @override
   State<SignupForm> createState() => _SignupFormState();
 }
@@ -143,12 +150,14 @@ class _SignupFormState extends State<SignupForm> {
         'createdAt': FieldValue.serverTimestamp(),
       });
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message ?? "Signup failed")));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message ?? "Signup failed")));
+      }
     }
 
-    setState(() => isLoading = false);
+    if (mounted) setState(() => isLoading = false);
   }
 
   @override
@@ -177,7 +186,7 @@ class _SignupFormState extends State<SignupForm> {
           TextField(
             controller: goalWeight,
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(labelText: "Goal Weight (kg)"),
+            decoration: InputDecoration(labelText: "Target Weight (kg)"),
           ),
           TextField(
             controller: email,

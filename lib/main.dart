@@ -5,19 +5,19 @@ import 'package:mqtt_client/mqtt_server_client.dart';
 import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'history_page.dart';
-import 'coach_page.dart';
-import 'nutrition_page.dart';
-import 'water_page.dart';
-import 'measurement_page.dart';
-import 'nearby_gyms_page.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'profile_page.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'coach_page.dart';
 import 'login_page.dart';
-import 'pages/goals_page.dart';
 import 'pages/meals_page.dart';
-import 'pages/workouts_page.dart';
+import 'pages/more_page.dart';
+import 'pages/progress_page.dart';
+import 'routes/app_routes.dart';
 import 'services/fitness_repository.dart';
+import 'services/gemini_service.dart';
+import 'storage/app_preferences.dart';
+import 'widgets/nav_card.dart';
+import 'widgets/stat_card.dart';
 
 // Global notifier for theme management
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
@@ -28,6 +28,13 @@ final FlutterLocalNotificationsPlugin notificationsPlugin =
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  // SharedPreferences-backed app settings (theme, last tab, water goal).
+  await AppPreferences.init();
+  themeNotifier.value = AppPreferences.instance.themeMode;
+
+  // Timezone database for OS-scheduled reminders (water/workout).
+  tzdata.initializeTimeZones();
 
   const AndroidInitializationSettings androidInit =
       AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -43,6 +50,8 @@ void main() async {
       >()
       ?.requestNotificationsPermission();
 
+  GeminiService.initializeOnAppLaunch();
+
   runApp(const FitNetApp());
 }
 
@@ -53,7 +62,7 @@ class FitNetApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
-      builder: (_, ThemeMode currentMode, __) {
+      builder: (_, ThemeMode currentMode, child) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
@@ -68,6 +77,7 @@ class FitNetApp extends StatelessWidget {
             ),
           ),
           themeMode: currentMode,
+          routes: AppRoutes.table,
           home: const AuthGate(),
         );
       },
@@ -106,7 +116,7 @@ class MainPage extends StatefulWidget {
 }
 
 class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
-  int _selectedIndex = 0;
+  int _selectedIndex = AppPreferences.instance.lastTabIndex;
   Map<String, dynamic>? userData;
   double weight = 0;
   double height = 1.70;
@@ -290,15 +300,22 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     }
   }
 
+  void _selectTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+    // Remember the last selected tab (SharedPreferences course topic).
+    AppPreferences.instance.setLastTabIndex(index);
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       _buildHomeView(),
-      HistoryPage(),
-      const WaterPage(),
-      const MeasurementsPage(),
-      const NutritionPage(),
       const CoachPage(),
+      MealsPage(),
+      const ProgressPage(),
+      MorePage(onProfileUpdated: loadUserData),
     ];
 
     return Scaffold(
@@ -321,19 +338,20 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
                 icon: Icon(
                   mode == ThemeMode.light ? Icons.dark_mode : Icons.light_mode,
                 ),
-                onPressed: () => themeNotifier.value = mode == ThemeMode.light
-                    ? ThemeMode.dark
-                    : ThemeMode.light,
+                onPressed: () {
+                  final next = mode == ThemeMode.light
+                      ? ThemeMode.dark
+                      : ThemeMode.light;
+                  themeNotifier.value = next;
+                  AppPreferences.instance.setThemeMode(next);
+                },
               );
             },
           ),
           IconButton(
             icon: const Icon(Icons.person_outline),
             onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => ProfilePage()),
-              );
+              await Navigator.pushNamed(context, AppRoutes.profile);
               loadUserData();
             },
           ),
@@ -346,41 +364,32 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       body: pages[_selectedIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.history_outlined),
-            selectedIcon: Icon(Icons.history),
-            label: 'History',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.water_drop_outlined),
-            selectedIcon: Icon(Icons.water_drop),
-            label: 'Water',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.straighten_outlined),
-            selectedIcon: Icon(Icons.straighten),
-            label: 'Body',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.restaurant_outlined),
-            selectedIcon: Icon(Icons.restaurant),
-            label: 'Nutrition',
+            label: 'Dashboard',
           ),
           NavigationDestination(
             icon: Icon(Icons.psychology_outlined),
             selectedIcon: Icon(Icons.psychology),
-            label: 'Coach',
+            label: 'AI Coach',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.restaurant_outlined),
+            selectedIcon: Icon(Icons.restaurant),
+            label: 'Meals',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights),
+            label: 'Progress',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.menu_outlined),
+            selectedIcon: Icon(Icons.menu),
+            label: 'More',
           ),
         ],
       ),
@@ -398,20 +407,28 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(20),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              "Welcome ${userData!['firstName'] ?? 'User'} 👋",
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            Center(
+              child: Text(
+                "Welcome ${userData!['firstName'] ?? 'User'} 👋",
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: requestWeight,
-              icon: const Icon(Icons.refresh),
-              label: const Text("Get Weight"),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: requestWeight,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Get Weight"),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
                 ),
               ),
             ),
@@ -431,85 +448,73 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 20),
             _buildCard(
-              "Goal Weight",
+              "Target Weight",
               "${userData!['goalWeight'] ?? '--'} kg",
               Icons.flag,
             ),
             if (userData!['goalWeight'] != null && weight > 0)
               _buildGoalProgressCard(),
-            const SizedBox(height: 20),
-            Text(
-              "Height used for calculation: ${height.toStringAsFixed(2)}m",
-              style: const TextStyle(color: Colors.grey),
+            const SizedBox(height: 8),
+            Center(
+              child: Text(
+                "Height used for calculation: ${height.toStringAsFixed(2)}m",
+                style: const TextStyle(color: Colors.grey),
+              ),
             ),
             const SizedBox(height: 24),
-            _buildFitnessTrackerSection(),
+            const Text(
+              "Today",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            _buildStatsSection(),
+            const SizedBox(height: 12),
+            _buildWaterSummaryCard(),
+            const SizedBox(height: 24),
+            const Text(
+              "Quick Actions",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            NavCard(
+              title: "Log food with AI Coach",
+              subtitle: "Type \"I ate ...\" and it's logged instantly",
+              icon: Icons.psychology_outlined,
+              onTap: () => _selectTab(1),
+            ),
+            const SizedBox(height: 12),
+            NavCard(
+              title: "Scan a meal",
+              subtitle: "Photo or description — AI estimates calories",
+              icon: Icons.camera_alt_outlined,
+              iconColor: Colors.orange,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.mealScan),
+            ),
+            const SizedBox(height: 12),
+            NavCard(
+              title: "Meal history",
+              subtitle: "Review, edit or delete logged meals",
+              icon: Icons.restaurant_outlined,
+              iconColor: Colors.green,
+              onTap: () => _selectTab(2),
+            ),
+            const SizedBox(height: 12),
+            NavCard(
+              title: "Find Nearby Gyms",
+              subtitle: "Open a map with gyms around your location",
+              icon: Icons.map_outlined,
+              iconColor: Colors.teal,
+              onTap: () => Navigator.pushNamed(context, AppRoutes.nearbyGyms),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildFitnessTrackerSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            "Fitness Tracker",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildStatsSection(),
-        const SizedBox(height: 12),
-        _buildNavCard(
-          title: "Goals",
-          subtitle: "Daily & weekly fitness targets",
-          icon: Icons.flag,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => GoalsPage()),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildNavCard(
-          title: "Meals",
-          subtitle: "Track meals & calorie intake",
-          icon: Icons.restaurant,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => MealsPage()),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildNavCard(
-          title: "Workouts",
-          subtitle: "Log activities & calories burned",
-          icon: Icons.fitness_center,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => WorkoutsPage()),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildNavCard(
-          title: "Find Nearby Gyms",
-          subtitle: "Open a map with gyms around your location",
-          icon: Icons.map_outlined,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const NearbyGymsPage()),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildStatsSection() {
-    return FutureBuilder<FitnessStats>(
-      future: _fitnessRepository.loadDashboardStats(),
+    return StreamBuilder<FitnessStats>(
+      stream: _fitnessRepository.watchDashboardStats(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Card(
@@ -530,20 +535,24 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             Row(
               children: [
                 Expanded(
-                  child: _buildStatCard(
+                  child: StatCard(
                     title: 'Eaten Today',
                     value: '${stats.caloriesEatenToday}',
                     subtitle: 'kcal',
                     icon: Icons.local_fire_department_outlined,
+                    color: Colors.orange,
+                    onTap: () => _selectTab(2),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _buildStatCard(
+                  child: StatCard(
                     title: 'Workouts',
                     value: '${stats.workoutsThisWeek}',
                     subtitle: 'this week',
                     icon: Icons.fitness_center,
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.workouts),
                   ),
                 ),
               ],
@@ -552,20 +561,26 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             Row(
               children: [
                 Expanded(
-                  child: _buildStatCard(
+                  child: StatCard(
                     title: 'Burned',
                     value: '${stats.caloriesBurnedThisWeek}',
                     subtitle: 'kcal this week',
                     icon: Icons.bolt_outlined,
+                    color: Colors.deepOrange,
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.workouts),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _buildStatCard(
-                    title: 'Goals',
+                  child: StatCard(
+                    title: 'Fitness Goals',
                     value: '${stats.activeGoals}',
                     subtitle: '${stats.completedGoals} completed',
                     icon: Icons.flag_outlined,
+                    color: Colors.green,
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.fitnessGoals),
                   ),
                 ),
               ],
@@ -576,54 +591,83 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required String subtitle,
-    required IconData icon,
-  }) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Colors.blue),
-            const SizedBox(height: 8),
-            Text(title, style: TextStyle(color: Colors.grey[600])),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            Text(subtitle, style: const TextStyle(fontSize: 12)),
-          ],
-        ),
-      ),
-    );
-  }
+  /// Water summary read from the same Firestore document the Hydration page
+  /// writes, with the goal coming from SharedPreferences.
+  Widget _buildWaterSummaryCard() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const SizedBox.shrink();
 
-  Widget _buildNavCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        leading: Icon(icon, size: 36, color: Colors.blue),
-        title: Text(
-          title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
+    final now = DateTime.now();
+    final todayId = "${now.year}-${now.month}-${now.day}";
+    final goalMl = AppPreferences.instance.dailyWaterGoalMl;
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('water_logs')
+          .doc(todayId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final currentMl = snapshot.data?.data()?['amountMl'] as int? ?? 0;
+        final progress = goalMl > 0
+            ? (currentMl / goalMl).clamp(0.0, 1.0)
+            : 0.0;
+
+        return Card(
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(15),
+            onTap: () => Navigator.pushNamed(context, AppRoutes.water),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.water_drop_outlined,
+                    color: Colors.blueAccent,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Water',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                        Text(
+                          '$currentMl / $goalMl ml',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 8,
+                            backgroundColor: Colors.blueAccent.withValues(
+                              alpha: 0.1,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -644,7 +688,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Goal Progress",
+                  "Target Progress",
                   style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                 ),
                 Text(
@@ -671,7 +715,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
             const SizedBox(height: 8),
             Text(
               remaining < 0.5
-                  ? "You've reached your goal! 🎉"
+                  ? "You've reached your target weight! 🎉"
                   : "Keep going! You're getting closer.",
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),

@@ -2,136 +2,114 @@ import 'package:flutter/material.dart';
 
 import '../models/fitness_goal.dart';
 import '../services/fitness_repository.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/friendly_error.dart';
 
-class GoalsPage extends StatelessWidget {
-  GoalsPage({super.key});
+/// Daily/weekly activity targets ("Fitness Goals"), distinct from the
+/// smart-scale "Target Weight" set in the profile.
+class GoalsPage extends StatefulWidget {
+  const GoalsPage({super.key});
 
+  @override
+  State<GoalsPage> createState() => _GoalsPageState();
+}
+
+class _GoalsPageState extends State<GoalsPage> {
   final FitnessRepository _repository = FitnessRepository();
+  String? _openingRecommendation;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Daily & Weekly Goals')),
+      appBar: AppBar(title: const Text('Fitness Goals')),
       body: StreamBuilder<List<FitnessGoal>>(
         stream: _repository.watchGoals(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return FriendlyErrorState(error: snapshot.error);
           }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
           final goals = snapshot.data ?? [];
-          if (goals.isEmpty) {
-            return const _EmptyState();
-          }
-
-          return ListView.builder(
+          return ListView(
             padding: const EdgeInsets.all(16),
-            itemCount: goals.length,
-            itemBuilder: (context, index) {
-              final goal = goals[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            goal.isComplete
-                                ? Icons.check_circle
-                                : Icons.flag_outlined,
-                            color: goal.isComplete ? Colors.green : Colors.blue,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              goal.title,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          PopupMenuButton<String>(
-                            onSelected: (action) {
-                              if (action == 'progress') {
-                                _showProgressDialog(context, goal);
-                              } else if (action == 'reset') {
-                                _resetGoal(context, goal);
-                              } else if (action == 'delete') {
-                                _deleteGoal(context, goal);
-                              }
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'progress',
-                                child: Text('Update progress'),
-                              ),
-                              PopupMenuItem(
-                                value: 'reset',
-                                child: Text('Reset progress'),
-                              ),
-                              PopupMenuItem(
-                                value: 'delete',
-                                child: Text('Delete'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          Chip(
-                            label: Text('${goal.period}: ${goal.periodLabel}'),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          Chip(
-                            label: Text(goal.statusLabel),
-                            visualDensity: VisualDensity.compact,
-                            avatar: Icon(
-                              goal.isComplete
-                                  ? Icons.check
-                                  : goal.isExpired
-                                  ? Icons.refresh
-                                  : Icons.play_arrow,
-                              size: 18,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${goal.period} goal: '
-                        '${_formatNumber(goal.currentValue)} / '
-                        '${_formatNumber(goal.targetValue)} ${goal.unit}',
-                      ),
-                      const SizedBox(height: 10),
-                      LinearProgressIndicator(value: goal.progress),
-                    ],
-                  ),
+            children: [
+              _GoalRecommendationsSection(
+                openingRecommendation: _openingRecommendation,
+                onSelected: (recommendation) =>
+                    _showRecommendedGoalDialog(context, recommendation),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: () => _showCustomGoalDialog(context),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Custom Goal'),
                 ),
-              );
-            },
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Your Goals',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (goals.isEmpty)
+                const EmptyState(
+                  icon: Icons.flag_outlined,
+                  message:
+                      'No fitness goals yet. Add a daily or weekly target.',
+                )
+              else
+                for (final goal in goals) _GoalCard(goal: goal, page: this),
+            ],
           );
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showDialog<void>(
-          context: context,
-          builder: (_) => _AddGoalDialog(repository: _repository),
-        ),
+        onPressed: () => _showCustomGoalDialog(context),
         icon: const Icon(Icons.add),
-        label: const Text('Add goal'),
+        label: const Text('Add Custom Goal'),
       ),
     );
+  }
+
+  Future<void> _showCustomGoalDialog(BuildContext context) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => _AddGoalDialog(repository: _repository),
+    );
+    if (saved == true && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Fitness goal saved.')));
+    }
+  }
+
+  Future<void> _showRecommendedGoalDialog(
+    BuildContext context,
+    _GoalRecommendation recommendation,
+  ) async {
+    if (_openingRecommendation != null) return;
+    setState(() => _openingRecommendation = recommendation.title);
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (_) => _AddGoalDialog(
+          repository: _repository,
+          recommendation: recommendation,
+        ),
+      );
+      if (saved == true && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${recommendation.title} goal saved.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _openingRecommendation = null);
+    }
   }
 
   Future<void> _showProgressDialog(
@@ -175,10 +153,13 @@ class GoalsPage extends StatelessWidget {
     try {
       await _repository.updateGoalProgress(goal.id, value);
     } catch (error) {
+      logDebugError('Update goal failed', error);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not update goal: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't update this goal. Please try again."),
+        ),
+      );
     }
   }
 
@@ -190,10 +171,13 @@ class GoalsPage extends StatelessWidget {
         context,
       ).showSnackBar(SnackBar(content: Text('${goal.title} progress reset.')));
     } catch (error) {
+      logDebugError('Reset goal failed', error);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not reset goal: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't reset this goal. Please try again."),
+        ),
+      );
     }
   }
 
@@ -221,10 +205,13 @@ class GoalsPage extends StatelessWidget {
     try {
       await _repository.deleteGoal(goal.id);
     } catch (error) {
+      logDebugError('Delete goal failed', error);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not delete goal: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't delete this goal. Please try again."),
+        ),
+      );
     }
   }
 
@@ -235,10 +222,293 @@ class GoalsPage extends StatelessWidget {
   }
 }
 
+class _GoalCard extends StatelessWidget {
+  const _GoalCard({required this.goal, required this.page});
+
+  final FitnessGoal goal;
+  final _GoalsPageState page;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  goal.isComplete ? Icons.check_circle : Icons.flag_outlined,
+                  color: goal.isComplete ? Colors.green : Colors.blue,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    goal.title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (action) {
+                    if (action == 'progress') {
+                      page._showProgressDialog(context, goal);
+                    } else if (action == 'reset') {
+                      page._resetGoal(context, goal);
+                    } else if (action == 'delete') {
+                      page._deleteGoal(context, goal);
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'progress',
+                      child: Text('Update progress'),
+                    ),
+                    PopupMenuItem(
+                      value: 'reset',
+                      child: Text('Reset progress'),
+                    ),
+                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                Chip(
+                  label: Text('${goal.period}: ${goal.periodLabel}'),
+                  visualDensity: VisualDensity.compact,
+                ),
+                Chip(
+                  label: Text(goal.statusLabel),
+                  visualDensity: VisualDensity.compact,
+                  avatar: Icon(
+                    goal.isComplete
+                        ? Icons.check
+                        : goal.isExpired
+                        ? Icons.refresh
+                        : Icons.play_arrow,
+                    size: 18,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${goal.period} goal: '
+              '${page._formatNumber(goal.currentValue)} / '
+              '${page._formatNumber(goal.targetValue)} ${goal.unit}',
+            ),
+            const SizedBox(height: 10),
+            LinearProgressIndicator(value: goal.progress),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalRecommendation {
+  const _GoalRecommendation({
+    required this.title,
+    required this.targetValue,
+    required this.unit,
+    required this.period,
+    required this.icon,
+  });
+
+  final String title;
+  final double targetValue;
+  final String unit;
+  final String period;
+  final IconData icon;
+}
+
+const List<_GoalRecommendation> _goalRecommendations = [
+  _GoalRecommendation(
+    title: 'Walk 8,000 steps',
+    targetValue: 8000,
+    unit: 'steps',
+    period: 'Daily',
+    icon: Icons.directions_walk,
+  ),
+  _GoalRecommendation(
+    title: 'Drink 2L of water',
+    targetValue: 2,
+    unit: 'L',
+    period: 'Daily',
+    icon: Icons.water_drop_outlined,
+  ),
+  _GoalRecommendation(
+    title: 'Burn 300 calories',
+    targetValue: 300,
+    unit: 'kcal',
+    period: 'Daily',
+    icon: Icons.local_fire_department_outlined,
+  ),
+  _GoalRecommendation(
+    title: 'Exercise 30 minutes',
+    targetValue: 30,
+    unit: 'minutes',
+    period: 'Daily',
+    icon: Icons.timer_outlined,
+  ),
+  _GoalRecommendation(
+    title: 'Log all meals today',
+    targetValue: 3,
+    unit: 'meals',
+    period: 'Daily',
+    icon: Icons.restaurant_menu,
+  ),
+  _GoalRecommendation(
+    title: 'Sleep 8 hours',
+    targetValue: 8,
+    unit: 'hours',
+    period: 'Daily',
+    icon: Icons.bedtime_outlined,
+  ),
+  _GoalRecommendation(
+    title: 'Workout 4 times this week',
+    targetValue: 4,
+    unit: 'workouts',
+    period: 'Weekly',
+    icon: Icons.fitness_center,
+  ),
+  _GoalRecommendation(
+    title: 'Run 10 km this week',
+    targetValue: 10,
+    unit: 'km',
+    period: 'Weekly',
+    icon: Icons.directions_run,
+  ),
+  _GoalRecommendation(
+    title: 'Lose 0.5 kg this week',
+    targetValue: 0.5,
+    unit: 'kg',
+    period: 'Weekly',
+    icon: Icons.monitor_weight_outlined,
+  ),
+  _GoalRecommendation(
+    title: 'Complete 3 strength sessions',
+    targetValue: 3,
+    unit: 'sessions',
+    period: 'Weekly',
+    icon: Icons.sports_gymnastics,
+  ),
+  _GoalRecommendation(
+    title: 'Complete 2 cardio sessions',
+    targetValue: 2,
+    unit: 'sessions',
+    period: 'Weekly',
+    icon: Icons.directions_bike,
+  ),
+  _GoalRecommendation(
+    title: 'Stay under calorie target 5 days',
+    targetValue: 5,
+    unit: 'days',
+    period: 'Weekly',
+    icon: Icons.check_circle_outline,
+  ),
+];
+
+class _GoalRecommendationsSection extends StatelessWidget {
+  const _GoalRecommendationsSection({
+    required this.openingRecommendation,
+    required this.onSelected,
+  });
+
+  final String? openingRecommendation;
+  final ValueChanged<_GoalRecommendation> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final daily = _goalRecommendations
+        .where((recommendation) => recommendation.period == 'Daily')
+        .toList();
+    final weekly = _goalRecommendations
+        .where((recommendation) => recommendation.period == 'Weekly')
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Quick Add Goals', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        _GoalRecommendationGroup(
+          title: 'Daily',
+          recommendations: daily,
+          openingRecommendation: openingRecommendation,
+          onSelected: onSelected,
+        ),
+        const SizedBox(height: 12),
+        _GoalRecommendationGroup(
+          title: 'Weekly',
+          recommendations: weekly,
+          openingRecommendation: openingRecommendation,
+          onSelected: onSelected,
+        ),
+      ],
+    );
+  }
+}
+
+class _GoalRecommendationGroup extends StatelessWidget {
+  const _GoalRecommendationGroup({
+    required this.title,
+    required this.recommendations,
+    required this.openingRecommendation,
+    required this.onSelected,
+  });
+
+  final String title;
+  final List<_GoalRecommendation> recommendations;
+  final String? openingRecommendation;
+  final ValueChanged<_GoalRecommendation> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final recommendation in recommendations)
+              ActionChip(
+                avatar: openingRecommendation == recommendation.title
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(recommendation.icon, size: 18),
+                label: Text(recommendation.title),
+                onPressed: openingRecommendation == null
+                    ? () => onSelected(recommendation)
+                    : null,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _AddGoalDialog extends StatefulWidget {
-  const _AddGoalDialog({required this.repository});
+  const _AddGoalDialog({required this.repository, this.recommendation});
 
   final FitnessRepository repository;
+  final _GoalRecommendation? recommendation;
 
   @override
   State<_AddGoalDialog> createState() => _AddGoalDialogState();
@@ -250,6 +520,18 @@ class _AddGoalDialogState extends State<_AddGoalDialog> {
   final _unitController = TextEditingController();
   String _period = 'Daily';
   bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final recommendation = widget.recommendation;
+    if (recommendation != null) {
+      _titleController.text = recommendation.title;
+      _targetController.text = recommendation.targetValue.toString();
+      _unitController.text = recommendation.unit;
+      _period = recommendation.period;
+    }
+  }
 
   @override
   void dispose() {
@@ -276,9 +558,10 @@ class _AddGoalDialogState extends State<_AddGoalDialog> {
         unit: unit,
         period: _period,
       );
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context, true);
     } catch (error) {
-      _showError('Could not save goal: $error');
+      logDebugError('Save goal failed', error);
+      _showError("Couldn't save this goal. Please try again.");
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -294,7 +577,9 @@ class _AddGoalDialogState extends State<_AddGoalDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add fitness goal'),
+      title: Text(
+        widget.recommendation == null ? 'Add fitness goal' : 'Confirm goal',
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -350,30 +635,6 @@ class _AddGoalDialogState extends State<_AddGoalDialog> {
               : const Text('Save'),
         ),
       ],
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.flag_outlined, size: 56, color: Colors.blue),
-            SizedBox(height: 16),
-            Text(
-              'No goals yet. Add a daily or weekly fitness target.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

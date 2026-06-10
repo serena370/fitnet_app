@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'widgets/friendly_error.dart';
+
 class MeasurementsPage extends StatefulWidget {
   const MeasurementsPage({super.key});
 
@@ -54,10 +56,13 @@ class _MeasurementsPageState extends State<MeasurementsPage> {
         );
       }
     } catch (e) {
+      logDebugError('Error saving measurements', e);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error saving: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Couldn't save your measurements. Please try again."),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);

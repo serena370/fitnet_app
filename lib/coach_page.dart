@@ -1,15 +1,31 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'nutrition_page.dart';
+import 'models/food_log_draft.dart';
+import 'routes/app_routes.dart';
+import 'services/coach_action_classifier.dart';
+import 'services/coach_request_gate.dart';
 import 'services/fitness_repository.dart';
+import 'services/food_log_extractor.dart';
+import 'services/gemini_service.dart';
+import 'widgets/friendly_error.dart';
 
 class ChatMessage {
   final String text;
   final bool isUser;
-  ChatMessage({required this.text, required this.isUser});
+  const ChatMessage({required this.text, required this.isUser});
+}
+
+class _LastCoachFoodLog {
+  const _LastCoachFoodLog({
+    required this.id,
+    required this.description,
+    required this.mealType,
+  });
+
+  final String id;
+  final String description;
+  final String mealType;
 }
 
 class CoachPage extends StatefulWidget {
@@ -23,16 +39,14 @@ class _CoachPageState extends State<CoachPage> {
   final TextEditingController chatController = TextEditingController();
   final ScrollController scrollController = ScrollController();
   final FitnessRepository _fitnessRepository = FitnessRepository();
+  final GeminiService _geminiService = GeminiService.shared;
+  final FoodLogExtractor _foodLogExtractor = FoodLogExtractor();
+  final CoachRequestGate _requestGate = CoachRequestGate();
   List<ChatMessage> messages = [];
+  _LastCoachFoodLog? _lastCoachFoodLog;
   bool isTyping = false;
   bool isSavingPlan = false;
   bool isSavingEntry = false;
-
-  // 🔑 Gemini API Configuration
-  final String geminiKey = const String.fromEnvironment(
-    'GEMINI_API_KEY',
-    defaultValue: 'YOUR_API_KEY',
-  );
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -60,13 +74,22 @@ class _CoachPageState extends State<CoachPage> {
         : 0;
     double goal = (userData['goalWeight'] ?? 0).toDouble();
 
-    // Summarize recent meals for the AI
+    // Summarize recent meals for the AI. Macros are included only when they
+    // were actually estimated — no misleading P:0 C:0 F:0 placeholders.
     String mealHistory = meals.isEmpty
         ? "No meals logged today."
         : meals
               .map((m) {
                 final d = m.data() as Map<String, dynamic>;
-                return "- ${d['mealName']}: ${d['calories']}kcal (P:${d['protein']}g, C:${d['carbs']}g, F:${d['fats']}g)";
+                final mealName = d['name'] ?? d['mealName'] ?? 'Meal';
+                final hasMacros =
+                    d['protein'] != null ||
+                    d['carbs'] != null ||
+                    d['fats'] != null;
+                final macros = hasMacros
+                    ? " (P:${d['protein'] ?? '?'}g, C:${d['carbs'] ?? '?'}g, F:${d['fats'] ?? '?'}g)"
+                    : "";
+                return "- $mealName: ${d['calories']}kcal$macros";
               })
               .join("\\n");
 
@@ -79,59 +102,125 @@ class _CoachPageState extends State<CoachPage> {
   }
 
   Future<void> sendMessage(String text, String systemContext) async {
-    if (text.trim().isEmpty) return;
+    final trimmed = text.trim();
+    if (!_requestGate.tryStart(trimmed)) return;
 
     setState(() {
-      messages.add(ChatMessage(text: text, isUser: true));
+      messages.add(ChatMessage(text: trimmed, isUser: true));
       isTyping = true;
     });
     _scrollToBottom();
 
     try {
-      final response = await http.post(
-        Uri.parse(
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiKey",
-        ),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "systemInstruction": {
-            "parts": [
-              {"text": systemContext},
-            ],
-          },
-          "contents": [
-            {
-              "role": "user",
-              "parts": [
-                {"text": text},
-              ],
-            },
-          ],
-        }),
-      );
-
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && data["candidates"] != null) {
-        String reply = data["candidates"][0]["content"]["parts"][0]["text"];
-        setState(() {
-          messages.add(ChatMessage(text: reply, isUser: false));
-          isTyping = false;
-        });
-      } else {
-        String error = data["error"]?["message"] ?? "API Error";
-        setState(() {
-          messages.add(ChatMessage(text: "Coach Error: $error", isUser: false));
-          isTyping = false;
-        });
-      }
-    } catch (e) {
+      final reply = await _handleCoachInput(trimmed, systemContext);
+      if (!mounted) return;
+      setState(() => messages.add(ChatMessage(text: reply, isUser: false)));
+    } on GeminiException catch (error) {
+      if (!mounted) return;
       setState(() {
-        messages.add(ChatMessage(text: "Connection Error: $e", isUser: false));
-        isTyping = false;
+        messages.add(ChatMessage(text: error.message, isUser: false));
       });
+    } catch (error) {
+      debugPrint('Coach request failed: ${error.runtimeType}');
+      if (!mounted) return;
+      setState(() {
+        messages.add(
+          const ChatMessage(text: geminiFriendlyError, isUser: false),
+        );
+      });
+    } finally {
+      _requestGate.complete();
+      if (mounted) setState(() => isTyping = false);
     }
     _scrollToBottom();
+  }
+
+  Future<String> _handleCoachInput(String text, String systemContext) async {
+    if (CoachActionClassifier.isRemoveLastFoodLog(text)) {
+      return _handleRemoveLastFoodLog();
+    }
+
+    final intent = _foodLogExtractor.classifyIntent(text);
+    return switch (intent) {
+      FoodLogIntent.logFood => await _handleFoodLog(text),
+      FoodLogIntent.progressAnalysis => await _handleProgressAnalysis(
+        text,
+        systemContext,
+      ),
+      _ => await _handleCoachChat(text, systemContext),
+    };
+  }
+
+  Future<String> _handleFoodLog(String text) async {
+    final draft = await _foodLogExtractor.extract(text);
+    if (!draft.isReadyToSave) {
+      return 'I can log that, but I need the meal type or an estimated calorie amount first.';
+    }
+
+    final mealId = await _fitnessRepository.addMeal(
+      name: draft.foodName,
+      mealType: draft.mealType.label,
+      calories: draft.calories,
+      notes: draft.shortDescription,
+      quantity: draft.quantity,
+      unit: draft.unit,
+      caloriesEstimated: draft.caloriesEstimated,
+      source: 'coach',
+    );
+    _lastCoachFoodLog = _LastCoachFoodLog(
+      id: mealId,
+      description: draft.shortDescription,
+      mealType: draft.mealType.value,
+    );
+
+    final estimateText = draft.caloriesEstimated ? 'estimated ' : '';
+    return 'Logged ${draft.mealType.value}: ${draft.shortDescription}, '
+        '$estimateText${draft.calories} kcal.';
+  }
+
+  Future<String> _handleRemoveLastFoodLog() async {
+    final lastFoodLog = _lastCoachFoodLog;
+    if (lastFoodLog == null) {
+      final removed = await _fitnessRepository.deleteMostRecentMeal();
+      if (removed == null) {
+        return "I couldn't find a meal log to remove.";
+      }
+      return 'Removed ${removed.mealType.toLowerCase()}: ${removed.notes.isEmpty ? removed.name : removed.notes}.';
+    }
+
+    try {
+      await _fitnessRepository.deleteMeal(lastFoodLog.id);
+      _lastCoachFoodLog = null;
+      return 'Removed ${lastFoodLog.mealType}: ${lastFoodLog.description}.';
+    } catch (error) {
+      debugPrint('Coach meal id removal failed: ${error.runtimeType}');
+      final removed = await _fitnessRepository.deleteMostRecentMeal();
+      _lastCoachFoodLog = null;
+      if (removed == null) {
+        return "I couldn't find a meal log to remove.";
+      }
+      return 'Removed ${removed.mealType.toLowerCase()}: ${removed.notes.isEmpty ? removed.name : removed.notes}.';
+    }
+  }
+
+  Future<String> _handleProgressAnalysis(
+    String text,
+    String systemContext,
+  ) async {
+    final response = await _geminiService.generateText(
+      systemInstruction: systemContext,
+      prompt:
+          'Give a concise progress analysis only. Do not log food or save any meal. User request: $text',
+    );
+    return response.text;
+  }
+
+  Future<String> _handleCoachChat(String text, String systemContext) async {
+    final response = await _geminiService.generateText(
+      systemInstruction: systemContext,
+      prompt: text,
+    );
+    return response.text;
   }
 
   @override
@@ -148,7 +237,10 @@ class _CoachPageState extends State<CoachPage> {
           if (messages.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.delete_sweep_outlined),
-              onPressed: () => setState(() => messages.clear()),
+              onPressed: () => setState(() {
+                messages.clear();
+                _lastCoachFoodLog = null;
+              }),
             ),
         ],
       ),
@@ -237,7 +329,7 @@ class _CoachPageState extends State<CoachPage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.blue.withOpacity(0.2),
+            color: Colors.blue.withValues(alpha: 0.2),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -258,14 +350,13 @@ class _CoachPageState extends State<CoachPage> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.restaurant, color: Colors.white),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const NutritionPage(),
-                  ),
+                icon: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: Colors.white,
                 ),
-                tooltip: "Log a meal",
+                onPressed: () =>
+                    Navigator.pushNamed(context, AppRoutes.mealScan),
+                tooltip: "Scan a meal",
               ),
             ],
           ),
@@ -295,8 +386,8 @@ class _CoachPageState extends State<CoachPage> {
             .map(
               (s) => ActionChip(
                 label: Text(s, style: const TextStyle(fontSize: 12)),
-                onPressed: () => sendMessage(s, context),
-                backgroundColor: Colors.blue.withOpacity(0.05),
+                onPressed: isTyping ? null : () => sendMessage(s, context),
+                backgroundColor: Colors.blue.withValues(alpha: 0.05),
               ),
             )
             .toList(),
@@ -307,7 +398,6 @@ class _CoachPageState extends State<CoachPage> {
   Widget _buildChatBubble(ChatMessage msg) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final canSavePlan = !msg.isUser && _looksLikeWorkoutPlan(msg.text);
-    final canSaveMeal = !msg.isUser && _looksLikeMealSuggestion(msg.text);
     final canSaveGoal = !msg.isUser && _looksLikeGoalSuggestion(msg.text);
     return Align(
       alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -337,7 +427,7 @@ class _CoachPageState extends State<CoachPage> {
                 color: msg.isUser || isDark ? Colors.white : Colors.black87,
               ),
             ),
-            if (canSavePlan || canSaveMeal || canSaveGoal) ...[
+            if (canSavePlan || canSaveGoal) ...[
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -352,12 +442,6 @@ class _CoachPageState extends State<CoachPage> {
                       label: Text(
                         isSavingPlan ? 'Saving...' : 'Save as Workout',
                       ),
-                    ),
-                  if (canSaveMeal)
-                    OutlinedButton.icon(
-                      onPressed: isSavingEntry ? null : () => _saveMeal(msg),
-                      icon: const Icon(Icons.restaurant, size: 18),
-                      label: const Text('Save as Meal'),
                     ),
                   if (canSaveGoal)
                     OutlinedButton.icon(
@@ -385,19 +469,6 @@ class _CoachPageState extends State<CoachPage> {
         lower.contains('gym');
   }
 
-  bool _looksLikeMealSuggestion(String text) {
-    final lower = text.toLowerCase();
-    return lower.contains('meal') ||
-        lower.contains('breakfast') ||
-        lower.contains('lunch') ||
-        lower.contains('dinner') ||
-        lower.contains('snack') ||
-        lower.contains('calorie') ||
-        lower.contains('protein') ||
-        lower.contains('carb') ||
-        lower.contains('fat');
-  }
-
   bool _looksLikeGoalSuggestion(String text) {
     final lower = text.toLowerCase();
     return lower.contains('goal') ||
@@ -418,42 +489,15 @@ class _CoachPageState extends State<CoachPage> {
         const SnackBar(content: Text('AI workout plan saved to Workouts.')),
       );
     } catch (error) {
+      logDebugError('Save workout plan failed', error);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save workout plan: $error')),
+        const SnackBar(
+          content: Text("Couldn't save the workout plan. Please try again."),
+        ),
       );
     } finally {
       if (mounted) setState(() => isSavingPlan = false);
-    }
-  }
-
-  Future<void> _saveMeal(ChatMessage msg) async {
-    final draft = _MealDraft.fromAiText(msg.text);
-    final confirmed = await showDialog<_MealDraft>(
-      context: context,
-      builder: (context) => _SaveMealDialog(initialDraft: draft),
-    );
-    if (confirmed == null) return;
-
-    setState(() => isSavingEntry = true);
-    try {
-      await _fitnessRepository.addMeal(
-        name: confirmed.name,
-        mealType: confirmed.mealType,
-        calories: confirmed.calories,
-        notes: confirmed.notes,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Meal saved from AI suggestion.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not save meal: $error')));
-    } finally {
-      if (mounted) setState(() => isSavingEntry = false);
     }
   }
 
@@ -478,10 +522,13 @@ class _CoachPageState extends State<CoachPage> {
         const SnackBar(content: Text('Goal saved from AI suggestion.')),
       );
     } catch (error) {
+      logDebugError('Save goal failed', error);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not save goal: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't save the goal. Please try again."),
+        ),
+      );
     } finally {
       if (mounted) setState(() => isSavingEntry = false);
     }
@@ -518,7 +565,7 @@ class _CoachPageState extends State<CoachPage> {
         color: Theme.of(context).scaffoldBackgroundColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -5),
           ),
@@ -546,6 +593,7 @@ class _CoachPageState extends State<CoachPage> {
                 ),
               ),
               onSubmitted: (val) {
+                if (isTyping) return;
                 final text = chatController.text;
                 chatController.clear();
                 sendMessage(text, systemContext);
@@ -554,55 +602,20 @@ class _CoachPageState extends State<CoachPage> {
           ),
           const SizedBox(width: 8),
           CircleAvatar(
-            backgroundColor: Colors.blue,
+            backgroundColor: isTyping ? Colors.grey : Colors.blue,
             child: IconButton(
               icon: const Icon(Icons.send, color: Colors.white, size: 20),
-              onPressed: () {
-                final text = chatController.text;
-                chatController.clear();
-                sendMessage(text, systemContext);
-              },
+              onPressed: isTyping
+                  ? null
+                  : () {
+                      final text = chatController.text;
+                      chatController.clear();
+                      sendMessage(text, systemContext);
+                    },
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _MealDraft {
-  const _MealDraft({
-    required this.name,
-    required this.mealType,
-    required this.calories,
-    required this.notes,
-  });
-
-  final String name;
-  final String mealType;
-  final int calories;
-  final String notes;
-
-  factory _MealDraft.fromAiText(String text) {
-    final lower = text.toLowerCase();
-    final caloriesMatch = RegExp(
-      r'(\d{1,5})\s*(kcal|calories|cal)',
-      caseSensitive: false,
-    ).firstMatch(text);
-
-    return _MealDraft(
-      name: _firstUsefulLine(text, fallback: 'AI suggested meal'),
-      mealType: lower.contains('breakfast')
-          ? 'Breakfast'
-          : lower.contains('lunch')
-          ? 'Lunch'
-          : lower.contains('dinner')
-          ? 'Dinner'
-          : lower.contains('snack')
-          ? 'Snack'
-          : 'Breakfast',
-      calories: int.tryParse(caloriesMatch?.group(1) ?? '') ?? 0,
-      notes: text,
     );
   }
 }
@@ -634,110 +647,6 @@ class _GoalDraft {
           : 'Daily',
       targetValue: double.tryParse(targetMatch?.group(1) ?? '') ?? 1,
       unit: _normalizeGoalUnit(targetMatch?.group(2) ?? 'times'),
-    );
-  }
-}
-
-class _SaveMealDialog extends StatefulWidget {
-  const _SaveMealDialog({required this.initialDraft});
-
-  final _MealDraft initialDraft;
-
-  @override
-  State<_SaveMealDialog> createState() => _SaveMealDialogState();
-}
-
-class _SaveMealDialogState extends State<_SaveMealDialog> {
-  late final TextEditingController _nameController;
-  late final TextEditingController _caloriesController;
-  late final TextEditingController _notesController;
-  late String _mealType;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.initialDraft.name);
-    _caloriesController = TextEditingController(
-      text: widget.initialDraft.calories.toString(),
-    );
-    _notesController = TextEditingController(text: widget.initialDraft.notes);
-    _mealType = widget.initialDraft.mealType;
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _caloriesController.dispose();
-    _notesController.dispose();
-    super.dispose();
-  }
-
-  void _confirm() {
-    final name = _nameController.text.trim();
-    final calories = int.tryParse(_caloriesController.text.trim());
-    if (name.isEmpty || calories == null || calories < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a meal name and valid calories.')),
-      );
-      return;
-    }
-
-    Navigator.pop(
-      context,
-      _MealDraft(
-        name: name,
-        mealType: _mealType,
-        calories: calories,
-        notes: _notesController.text.trim(),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Review AI Meal'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Meal name'),
-            ),
-            DropdownButtonFormField<String>(
-              initialValue: _mealType,
-              decoration: const InputDecoration(labelText: 'Meal type'),
-              items: const [
-                DropdownMenuItem(value: 'Breakfast', child: Text('Breakfast')),
-                DropdownMenuItem(value: 'Lunch', child: Text('Lunch')),
-                DropdownMenuItem(value: 'Dinner', child: Text('Dinner')),
-                DropdownMenuItem(value: 'Snack', child: Text('Snack')),
-              ],
-              onChanged: (value) {
-                if (value != null) setState(() => _mealType = value);
-              },
-            ),
-            TextField(
-              controller: _caloriesController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Calories'),
-            ),
-            TextField(
-              controller: _notesController,
-              maxLines: 4,
-              decoration: const InputDecoration(labelText: 'Notes'),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _confirm, child: const Text('Save Meal')),
-      ],
     );
   }
 }
