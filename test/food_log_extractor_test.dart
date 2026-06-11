@@ -35,6 +35,21 @@ void main() {
     expect(draft.calories, greaterThan(0));
   });
 
+  test('milk and cereal breakfast creates a food log draft', () async {
+    final extractor = FoodLogExtractor();
+
+    final draft = await extractor.extract(
+      'I ate a milk and cereal bowl for breakfast today',
+    );
+
+    expect(draft.intent, FoodLogIntent.logFood);
+    expect(draft.isReadyToSave, isTrue);
+    expect(draft.mealType, MealType.breakfast);
+    expect(draft.foodName, 'Milk and Cereal');
+    expect(draft.unit, 'bowl');
+    expect(draft.calories, greaterThan(0));
+  });
+
   test('lahme bi ajin breakfast creates a breakfast food log draft', () async {
     final extractor = FoodLogExtractor();
 

@@ -153,20 +153,58 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
+    Map<String, dynamic> data;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      // A missing profile doc renders as an empty profile instead of
+      // blocking the dashboard behind the loading spinner forever.
+      data = doc.data() ?? const {};
+    } catch (e) {
+      debugPrint("Failed to load profile: $e");
+      // On a failed read, keep the profile we already had (or empty).
+      data = userData ?? const {};
+    }
+
+    final latestWeight = await _loadLatestSavedWeight(user.uid);
 
     if (!mounted) return;
 
-    if (doc.exists) {
-      final data = doc.data();
-      setState(() {
-        userData = data;
-        double h = (data?['height'] ?? 1.70).toDouble();
-        if (h > 0) height = h;
-      });
+    setState(() {
+      userData = data;
+      double h = (data['height'] ?? 1.70).toDouble();
+      if (h > 0) height = h;
+      if (latestWeight != null) weight = latestWeight;
+    });
+  }
+
+  Future<double?> _loadLatestSavedWeight(String userId) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('weights')
+          .where('userId', isEqualTo: userId)
+          .get();
+      QueryDocumentSnapshot<Map<String, dynamic>>? latestDoc;
+      DateTime? latestDate;
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final timestamp = data['timestamp'];
+        final date = timestamp is Timestamp ? timestamp.toDate() : null;
+        if (latestDoc == null ||
+            (date != null &&
+                (latestDate == null || date.isAfter(latestDate)))) {
+          latestDoc = doc;
+          latestDate = date;
+        }
+      }
+
+      return (latestDoc?.data()['weight'] as num?)?.toDouble();
+    } catch (e) {
+      debugPrint("Failed to load latest weight: $e");
+      return null;
     }
   }
 
@@ -419,6 +457,18 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 10),
+            if (userData!.isEmpty) ...[
+              NavCard(
+                title: "Complete your profile",
+                subtitle: "Add your name, height and goal weight",
+                icon: Icons.person_outline,
+                onTap: () async {
+                  await Navigator.pushNamed(context, AppRoutes.profile);
+                  loadUserData();
+                },
+              ),
+              const SizedBox(height: 20),
+            ],
             Center(
               child: ElevatedButton.icon(
                 onPressed: requestWeight,

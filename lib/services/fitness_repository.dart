@@ -101,11 +101,50 @@ class FitnessRepository {
   }
 
   Stream<FitnessStats> watchDashboardStats() {
-    return _firestore
-        .collection('meals')
-        .where('userId', isEqualTo: _userId)
-        .snapshots()
-        .asyncMap((_) => loadDashboardStats());
+    late final StreamController<FitnessStats> controller;
+    final subscriptions =
+        <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+    Timer? reloadDebounce;
+
+    Future<void> reload() async {
+      try {
+        final stats = await loadDashboardStats();
+        if (!controller.isClosed) controller.add(stats);
+      } catch (error, stackTrace) {
+        if (!controller.isClosed) controller.addError(error, stackTrace);
+      }
+    }
+
+    void scheduleReload() {
+      reloadDebounce?.cancel();
+      reloadDebounce = Timer(const Duration(milliseconds: 150), reload);
+    }
+
+    controller = StreamController<FitnessStats>(
+      onListen: () {
+        unawaited(reload());
+        for (final collection in const ['meals', 'workouts', 'goals']) {
+          subscriptions.add(
+            _firestore
+                .collection(collection)
+                .where('userId', isEqualTo: _userId)
+                .snapshots()
+                .listen(
+                  (_) => scheduleReload(),
+                  onError: (_) => scheduleReload(),
+                ),
+          );
+        }
+      },
+      onCancel: () async {
+        reloadDebounce?.cancel();
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+
+    return controller.stream;
   }
 
   Future<String> addMeal({
@@ -157,22 +196,24 @@ class FitnessRepository {
     int? carbs,
     int? fats,
   }) {
+    final values = <String, dynamic>{
+      'name': name,
+      'mealName': name,
+      'mealType': mealType,
+      'calories': calories,
+      'notes': notes,
+      'quantity': quantity,
+      'unit': unit,
+      'caloriesEstimated': caloriesEstimated,
+      'protein': protein ?? FieldValue.delete(),
+      'carbs': carbs ?? FieldValue.delete(),
+      'fats': fats ?? FieldValue.delete(),
+    };
+
     return _updateOwnedDocument(
       collection: 'meals',
       documentId: mealId,
-      values: {
-        'name': name,
-        'mealName': name,
-        'mealType': mealType,
-        'calories': calories,
-        'notes': notes,
-        'quantity': quantity,
-        'unit': unit,
-        'caloriesEstimated': caloriesEstimated,
-        'protein': ?protein,
-        'carbs': ?carbs,
-        'fats': ?fats,
-      },
+      values: values,
     );
   }
 
@@ -250,21 +291,12 @@ class FitnessRepository {
     );
     final nextWeekStart = weekStart.add(const Duration(days: 7));
 
-    final mealsSnapshot = await _firestore
-        .collection('meals')
-        .where('userId', isEqualTo: userId)
-        .get();
-    final workoutsSnapshot = await _firestore
-        .collection('workouts')
-        .where('userId', isEqualTo: userId)
-        .get();
-    final goalsSnapshot = await _firestore
-        .collection('goals')
-        .where('userId', isEqualTo: userId)
-        .get();
+    final meals = await _loadOwnedDocs('meals', userId);
+    final workouts = await _loadOwnedDocs('workouts', userId);
+    final goals = await _loadOwnedDocs('goals', userId);
 
     var caloriesEatenToday = 0;
-    for (final doc in mealsSnapshot.docs) {
+    for (final doc in meals) {
       final data = doc.data();
       final date = _readDate(data['date']) ?? _readDate(data['timestamp']);
       if (date != null &&
@@ -276,7 +308,7 @@ class FitnessRepository {
 
     var workoutsThisWeek = 0;
     var caloriesBurnedThisWeek = 0;
-    for (final doc in workoutsSnapshot.docs) {
+    for (final doc in workouts) {
       final data = doc.data();
       final date = _readDate(data['date']) ?? _readDate(data['timestamp']);
       if (date != null &&
@@ -290,7 +322,7 @@ class FitnessRepository {
 
     var activeGoals = 0;
     var completedGoals = 0;
-    for (final doc in goalsSnapshot.docs) {
+    for (final doc in goals) {
       final goal = FitnessGoal.fromFirestore(doc);
       if (goal.isComplete) {
         completedGoals += 1;
@@ -306,6 +338,21 @@ class FitnessRepository {
       activeGoals: activeGoals,
       completedGoals: completedGoals,
     );
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _loadOwnedDocs(
+    String collection,
+    String userId,
+  ) async {
+    try {
+      final snapshot = await _firestore
+          .collection(collection)
+          .where('userId', isEqualTo: userId)
+          .get();
+      return snapshot.docs;
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<void> deleteWorkout(String workoutId) {

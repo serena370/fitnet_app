@@ -59,9 +59,23 @@ class _NearbyGymsPageState extends State<NearbyGymsPage> {
     });
 
     try {
-      final position = await _getCurrentPosition();
+      final position = await _getCurrentPosition().timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw const _NearbyGymsException(
+            'Location is taking too long on this device. You can still open a gyms search in Google Maps.',
+          );
+        },
+      );
       _position = position;
-      final gyms = await _searchNearbyGyms(position);
+      final gyms = await _searchNearbyGyms(position).timeout(
+        const Duration(seconds: 18),
+        onTimeout: () {
+          throw const _NearbyGymsException(
+            'Nearby gym search is taking too long. You can still open Google Maps.',
+          );
+        },
+      );
 
       if (!mounted) return;
       setState(() {
@@ -305,7 +319,7 @@ out center tags 50;
   Future<void> _openSearchInGoogleMaps() async {
     final position = _position;
     if (position == null) {
-      await _loadNearbyGyms();
+      await _launchMaps(Uri.parse('https://www.google.com/maps/search/gyms'));
       return;
     }
     await _launchMaps(
@@ -364,7 +378,7 @@ out center tags 50;
         action: _errorAction,
         onRetry: _loadNearbyGyms,
         onOpenAction: _errorAction == null ? null : _openErrorAction,
-        onOpenMaps: _position == null ? null : _openSearchInGoogleMaps,
+        onOpenMaps: _openSearchInGoogleMaps,
       );
     }
 

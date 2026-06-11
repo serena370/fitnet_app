@@ -268,6 +268,27 @@ class _LocalFood {
 
 final List<_LocalFood> _localFoods = [
   _LocalFood(
+    pattern: RegExp(r'\b(cereal|corn ?flakes|milk and cereal|cereal bowl)\b'),
+    displayName: 'Milk and Cereal',
+    shortName: 'milk and cereal bowl',
+    caloriesPerUnit: 280,
+    unit: 'bowl',
+  ),
+  _LocalFood(
+    pattern: RegExp(r'\b(oatmeal|oats)\b'),
+    displayName: 'Oatmeal',
+    shortName: 'oatmeal',
+    caloriesPerUnit: 180,
+    unit: 'bowl',
+  ),
+  _LocalFood(
+    pattern: RegExp(r'\b(yogurt|yoghurt)\b'),
+    displayName: 'Yogurt',
+    shortName: 'yogurt',
+    caloriesPerUnit: 150,
+    unit: 'serving',
+  ),
+  _LocalFood(
     pattern: RegExp(r'\b(zaatar|zaatar) (man2ouche|manakish|manousheh)\b'),
     displayName: 'Zaatar Man2ouche',
     shortName: 'zaatar man2ouche',

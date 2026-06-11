@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 
 const String geminiApiKey = String.fromEnvironment(
   'GEMINI_API_KEY',
-  defaultValue: '',
+  defaultValue: 'AIzaSyAwLxF4HUJmgXEo3JTFTMbTc2qnXaF3MGg',
 );
 
 const String geminiPrimaryModel = String.fromEnvironment(

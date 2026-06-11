@@ -155,6 +155,19 @@ class _SignupFormState extends State<SignupForm> {
           context,
         ).showSnackBar(SnackBar(content: Text(e.message ?? "Signup failed")));
       }
+    } on FirebaseException catch (e) {
+      // The Auth account was created but the profile write failed. Surface
+      // it so the user knows to fill in their profile from the dashboard.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Account created, but saving your profile failed: "
+              "${e.message ?? e.code}. You can complete it from the dashboard.",
+            ),
+          ),
+        );
+      }
     }
 
     if (mounted) setState(() => isLoading = false);

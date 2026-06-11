@@ -268,19 +268,26 @@ class _CoachPageState extends State<CoachPage> {
                           .limit(10)
                           .snapshots(),
                       builder: (context, mealSnap) {
-                        if (!userSnap.hasData ||
-                            !weightSnap.hasData ||
-                            !mealSnap.hasData) {
+                        final isLoading =
+                            userSnap.connectionState ==
+                                ConnectionState.waiting &&
+                            !userSnap.hasError &&
+                            !userSnap.hasData;
+                        if (isLoading) {
                           return const Center(
                             child: CircularProgressIndicator(),
                           );
                         }
 
                         final userData =
-                            userSnap.data!.data() as Map<String, dynamic>? ??
+                            userSnap.data?.data() as Map<String, dynamic>? ??
                             {};
-                        final weights = weightSnap.data!.docs;
-                        final meals = mealSnap.data!.docs;
+                        final weights = weightSnap.hasError
+                            ? <QueryDocumentSnapshot>[]
+                            : weightSnap.data?.docs ?? [];
+                        final meals = mealSnap.hasError
+                            ? <QueryDocumentSnapshot>[]
+                            : mealSnap.data?.docs ?? [];
                         final systemContext = _buildSystemPrompt(
                           userData,
                           weights,
